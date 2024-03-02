@@ -1,13 +1,20 @@
 plugins {
     id("java")
     id("org.jetbrains.intellij") version "1.5.2"
+    id("org.jetbrains.kotlin.jvm") version "1.6.10"
 }
 
 group = "com.ordinarythinker"
 version = "1.0-SNAPSHOT"
 
 repositories {
+    google()
     mavenCentral()
+}
+
+dependencies {
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.6.10")
+    implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:1.6.10")
 }
 
 // Configure Gradle IntelliJ Plugin - read more: https://github.com/JetBrains/gradle-intellij-plugin
