@@ -17,10 +17,11 @@ dependencies {
 }
 
 intellij {
-    version.set("2023.3.4")
+    //version.set("2023.3.4")
+    version.set("2022.3.1")
     type.set("IC") // Target IDE Platform
 
-    plugins.set(listOf())
+    plugins.set(listOf("android"))
 }
 
 tasks {
@@ -33,8 +34,15 @@ tasks {
         kotlinOptions.jvmTarget = "17"
     }
 
+    runIde {
+        // Absolute path to installed target 3.5 Android Studio to use as
+        // IDE Development Instance (the "Contents" directory is macOS specific):
+        ideDir.set(file("C:\\Program Files\\Android\\Android Studio2"))
+    }
+
     patchPluginXml {
-        sinceBuild.set("233")
+        //sinceBuild.set("233")
+        sinceBuild.set("223")
         untilBuild.set("241.*")
     }
 

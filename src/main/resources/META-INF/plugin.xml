@@ -28,6 +28,12 @@
     </extensions>
 
     <actions>
-        <action id="ProcessKtFileAction" class="com.ordinarythinker.jcat.ProcessKtFileAction" text="Generate Tests" />
+        <action
+                id="ProcessKtFileAction"
+                class="com.ordinarythinker.jcat.ProcessKtFileAction"
+                text="Generate Test"
+                description="Generate test">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
     </actions>
 </idea-plugin>
