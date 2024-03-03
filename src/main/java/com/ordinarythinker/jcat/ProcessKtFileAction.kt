@@ -44,6 +44,8 @@ class ProcessKtFileAction : AnAction() {
         // Traverse the PSI tree
         psiFile.acceptChildren(object : PsiElementVisitor() {
             override fun visitElement(element: PsiElement) {
+                println("current element text: ${element.text}")
+
                 if (element is KtNamedFunction) {
                     // Check if the function is annotated with @Composable
                     if (isComposableFunction(element)) {

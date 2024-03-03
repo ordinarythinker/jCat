@@ -17,10 +17,10 @@ dependencies {
 }
 
 intellij {
-    version.set("2023.1.5")
+    version.set("2023.3.4")
     type.set("IC") // Target IDE Platform
 
-    plugins.set(listOf(/* Plugin Dependencies */))
+    plugins.set(listOf())
 }
 
 tasks {
@@ -34,7 +34,7 @@ tasks {
     }
 
     patchPluginXml {
-        sinceBuild.set("231")
+        sinceBuild.set("233")
         untilBuild.set("241.*")
     }
 
