@@ -9,7 +9,6 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
-import org.jetbrains.kotlin.idea.KotlinFileType
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedFunction
 
@@ -17,16 +16,21 @@ class ProcessKtFileAction : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project: Project = e.project ?: return
         val file: VirtualFile? = e.getData(CommonDataKeys.VIRTUAL_FILE)
+
         if (file != null && file.isValid) {
             val psiFile: PsiFile? = e.getData(CommonDataKeys.PSI_FILE)
-            if (psiFile != null && psiFile.fileType == KotlinFileType.INSTANCE) {
-                // Check if it's a Jetpack Compose function file
+
+            try {
+                val ktFile = psiFile as KtFile
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            if (psiFile != null && psiFile is KtFile) {
                 if (containsComposableFunctions(psiFile)) {
-                    // Perform your plugin task with the file
                     try {
-                        runPluginTask(project, psiFile.virtualFile)
+                        runPluginTask(project, file)
                     } catch (ex: Exception) {
-                        // Handle exceptions
                         ex.printStackTrace()
                     }
                 }
@@ -40,14 +44,9 @@ class ProcessKtFileAction : AnAction() {
         }
 
         var containsComposable = false
-
-        // Traverse the PSI tree
         psiFile.acceptChildren(object : PsiElementVisitor() {
             override fun visitElement(element: PsiElement) {
-                println("current element text: ${element.text}")
-
                 if (element is KtNamedFunction) {
-                    // Check if the function is annotated with @Composable
                     if (isComposableFunction(element)) {
                         containsComposable = true
                         return

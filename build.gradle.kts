@@ -1,7 +1,6 @@
 plugins {
-    id("java")
+    id("org.jetbrains.intellij") version "1.16.0"
     id("org.jetbrains.kotlin.jvm") version "1.9.21"
-    id("org.jetbrains.intellij") version "1.16.1"
 }
 
 group = "com.ordinarythinker"
@@ -12,16 +11,19 @@ repositories {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.21")
-    implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:1.9.21")
+    implementation(kotlin("compiler-embeddable", "1.9.21"))
+    implementation(kotlin("reflect"))
 }
+
+apply(plugin = "org.jetbrains.intellij")
+apply(plugin = "kotlin")
 
 intellij {
     //version.set("2023.3.4")
     version.set("2022.3.1")
     type.set("IC") // Target IDE Platform
 
-    plugins.set(listOf("android"))
+    plugins.set(listOf("android", "Kotlin"))
 }
 
 tasks {

@@ -36,4 +36,6 @@
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
     </actions>
+
+    <depends>org.jetbrains.kotlin</depends>
 </idea-plugin>
