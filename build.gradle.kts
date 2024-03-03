@@ -1,25 +1,23 @@
 plugins {
     id("java")
-    id("org.jetbrains.intellij") version "1.5.2"
-    id("org.jetbrains.kotlin.jvm") version "1.6.10"
+    id("org.jetbrains.kotlin.jvm") version "1.9.21"
+    id("org.jetbrains.intellij") version "1.16.1"
 }
 
 group = "com.ordinarythinker"
 version = "1.0-SNAPSHOT"
 
 repositories {
-    google()
     mavenCentral()
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.6.10")
-    implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:1.6.10")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.21")
+    implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:1.9.21")
 }
 
-// Configure Gradle IntelliJ Plugin - read more: https://github.com/JetBrains/gradle-intellij-plugin
 intellij {
-    version.set("2021.2")
+    version.set("2023.1.5")
     type.set("IC") // Target IDE Platform
 
     plugins.set(listOf(/* Plugin Dependencies */))
@@ -28,13 +26,16 @@ intellij {
 tasks {
     // Set the JVM compatibility versions
     withType<JavaCompile> {
-        sourceCompatibility = "11"
-        targetCompatibility = "11"
+        sourceCompatibility = "17"
+        targetCompatibility = "17"
+    }
+    withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
+        kotlinOptions.jvmTarget = "17"
     }
 
     patchPluginXml {
-        sinceBuild.set("212")
-        untilBuild.set("222.*")
+        sinceBuild.set("231")
+        untilBuild.set("241.*")
     }
 
     signPlugin {
