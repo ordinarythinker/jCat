@@ -19,15 +19,13 @@ apply(plugin = "org.jetbrains.intellij")
 apply(plugin = "kotlin")
 
 intellij {
-    //version.set("2023.3.4")
     version.set("2022.3.1")
-    type.set("IC") // Target IDE Platform
+    type.set("IC")
 
     plugins.set(listOf("android", "Kotlin"))
 }
 
 tasks {
-    // Set the JVM compatibility versions
     withType<JavaCompile> {
         sourceCompatibility = "17"
         targetCompatibility = "17"
@@ -37,13 +35,10 @@ tasks {
     }
 
     runIde {
-        // Absolute path to installed target 3.5 Android Studio to use as
-        // IDE Development Instance (the "Contents" directory is macOS specific):
         ideDir.set(file("C:\\Program Files\\Android\\Android Studio2"))
     }
 
     patchPluginXml {
-        //sinceBuild.set("233")
         sinceBuild.set("223")
         untilBuild.set("241.*")
     }
