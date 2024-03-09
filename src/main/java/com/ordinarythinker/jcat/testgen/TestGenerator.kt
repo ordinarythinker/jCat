@@ -1,4 +1,4 @@
-package com.ordinarythinker.jcat
+package com.ordinarythinker.jcat.testgen
 
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.project.Project
