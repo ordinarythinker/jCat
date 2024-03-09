@@ -1,4 +1,4 @@
-package com.ordinarythinker.jcat.testgen
+package com.ordinarythinker.jcat.generator
 
 enum class TestRule {
     Visibility,
