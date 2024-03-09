@@ -17,8 +17,15 @@ class TestGenerator(private val project: Project) {
         val androidTestDir = project.baseDir.findChild("app")?.findChild("src")?.findChild("androidTest")
             ?: createAndroidTestDirectory()
 
+        val javaDir = androidTestDir.findChild("java") ?: androidTestDir.createChildDirectory(project, "java")
+
         // Get the package directory within androidTest
-        val packageDir = androidTestDir.createChildDirectory(project, packageName.replace('.', '/'))
+        var packageDir = javaDir
+        val parts = packageName.split(".")
+
+        for (part in parts) {
+            packageDir = packageDir.findChild(part) ?: packageDir.createChildDirectory(project, part)
+        }
 
         // Save the test file
         psiFile.virtualFile.copy(this, packageDir, "MyComposeTest.kt")
