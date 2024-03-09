@@ -9,6 +9,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
+import com.ordinarythinker.jcat.utils.isComposableAnnotation
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedFunction
 

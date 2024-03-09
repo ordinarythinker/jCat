@@ -1,4 +1,4 @@
-package com.ordinarythinker.jcat
+package com.ordinarythinker.jcat.utils
 
 import com.intellij.psi.PsiFile
 import org.jetbrains.kotlin.psi.KtAnnotationEntry

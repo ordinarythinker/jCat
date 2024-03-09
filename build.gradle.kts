@@ -11,12 +11,11 @@ repositories {
 }
 
 dependencies {
-    implementation(kotlin("compiler-embeddable", "1.9.21"))
     implementation(kotlin("reflect"))
 }
 
 apply(plugin = "org.jetbrains.intellij")
-apply(plugin = "kotlin")
+apply(plugin = "org.jetbrains.kotlin.jvm")
 
 intellij {
     version.set("2022.3.1")
