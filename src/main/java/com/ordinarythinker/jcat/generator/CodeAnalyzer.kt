@@ -1,6 +1,9 @@
 package com.ordinarythinker.jcat.generator
 
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiElementVisitor
 import com.ordinarythinker.jcat.FunctionTest
+import com.ordinarythinker.jcat.utils.isComposableAnnotation
 import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedFunction
@@ -18,7 +21,17 @@ class CodeAnalyzer(
     }
 
     private fun findComposables() {
-        // TODO: CodeAnalyzer.findComposables() is waiting for implementation
+        file.acceptChildren(object : PsiElementVisitor() {
+            override fun visitElement(element: PsiElement) {
+                if (element is KtNamedFunction) {
+                    val annotation = element.annotationEntries.find { it.isComposableAnnotation() }
+                    if (annotation != null) {
+                        functions.add(element)
+                    }
+                }
+                super.visitElement(element)
+            }
+        })
     }
 
     private fun analyzeContext(function: KtNamedFunction) : KtExpression? {
