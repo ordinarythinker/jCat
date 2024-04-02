@@ -1,17 +1,27 @@
 package com.ordinarythinker.jcat.generator
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFileFactory
+import com.intellij.psi.codeStyle.CodeStyleManager
+import com.ordinarythinker.jcat.models.TestScenario
 import org.jetbrains.kotlin.idea.KotlinFileType
-import org.jetbrains.kotlin.psi.KtNamedFunction
 
-class TestGenerator(private val project: Project) {
-    fun generateTestFile(composableFunctions: List<KtNamedFunction>, packageName: String) {
+class TestGenerator(
+    private val project: Project,
+    private val packageName: String
+) {
+    fun generateTestFile(composableFunctions: List<TestScenario>) {
+        val codeStyleManager = CodeStyleManager.getInstance(project)
+
         val fileText = buildTestFileText(composableFunctions, packageName)
+
         val psiFile = PsiFileFactory.getInstance(project)
             .createFileFromText("MyComposeTest.kt", KotlinFileType.INSTANCE as FileType, fileText)
+
+        codeStyleManager.scheduleReformatWhenSettingsComputed(psiFile)
 
         // Get the directory for androidTest
         val androidTestDir = project.baseDir.findChild("app")?.findChild("src")?.findChild("androidTest")
@@ -27,25 +37,45 @@ class TestGenerator(private val project: Project) {
             packageDir = packageDir.findChild(part) ?: packageDir.createChildDirectory(project, part)
         }
 
-        // Save the test file
-        psiFile.virtualFile.copy(this, packageDir, "MyComposeTest.kt")
+        ApplicationManager.getApplication().runWriteAction {
+            val testFile = packageDir.createChildData(this, "MyComposeTest.kt")
+            testFile.setBinaryContent(psiFile.text.toByteArray())
+        }
     }
 
-    private fun buildTestFileText(composableFunctions: List<KtNamedFunction>, packageName: String): String {
+    private fun buildTestFileText(scenarios: List<TestScenario>, packageName: String): String {
+        val name = scenarios
+        val imports: List<String> = getImports(scenarios)
+
         val content = buildString {
-            appendLine("package $packageName")
+            appendLine(
+                createFileHeader(imports)
+            )
+
             appendLine()
-            appendLine("import androidx.compose.ui.test.*")
-            appendLine("import androidx.compose.ui.test.junit4.createComposeRule")
-            appendLine("import androidx.compose.ui.test.junit4.setContent")
-            appendLine("import org.junit.Rule")
-            appendLine("import org.junit.Test")
-            appendLine()
-            appendLine("class MyComposeTest {")
+            appendLine("@RunWith(AndroidJUnit4::class)")
+            appendLine("class ${getFileName(scenarios)} {")
             appendLine()
             appendLine("    @get:Rule")
             appendLine("    val composeTestRule = createComposeRule()")
-            appendLine()
+
+            scenarios.forEach { scenario ->
+                appendLine()
+                appendLine(
+                    getTestScenario(scenario)
+                )
+                appendLine()
+            }
+
+            appendLine("}")
+        }
+
+        return content
+    }
+
+    private fun getTestScenario(scenario: TestScenario): String {
+        return buildString {
+            // TODO: getTestScenario
             appendLine("    @Test")
             appendLine("    fun myTest() {")
             appendLine("        // Start the app")
@@ -54,17 +84,8 @@ class TestGenerator(private val project: Project) {
             appendLine("        }")
             appendLine()
 
-            for (function in composableFunctions) {
-                appendLine("        // Test for ${function.name}")
-                appendLine("        // composeTestRule.onNode(...).perform...")
-                appendLine("        // composeTestRule.onNode(...).assert...")
-                appendLine()
-            }
-
             appendLine("    }")
-            appendLine("}")
         }
-        return content
     }
 
     private fun createAndroidTestDirectory(): VirtualFile {
@@ -72,5 +93,44 @@ class TestGenerator(private val project: Project) {
             ?: throw IllegalStateException("app directory not found")
         val srcDir = appDir.createChildDirectory(project, "src")
         return srcDir.createChildDirectory(project, "androidTest")
+    }
+
+    private fun createFileHeader(imports: List<String>): String {
+        return buildString {
+            appendLine("package $packageName")
+            appendLine()
+            appendLine("import androidx.compose.ui.input.key.Key")
+            appendLine("import androidx.compose.ui.test.*")
+            appendLine("import androidx.compose.ui.test.junit4.createComposeRule")
+            appendLine("import androidx.compose.ui.test.junit4.setContent")
+            appendLine("import androidx.test.ext.junit.runners.AndroidJUnit4")
+            appendLine("import org.junit.Rule")
+            appendLine("import org.junit.Test")
+            appendLine("import org.junit.runner.RunWith")
+
+            imports.forEach {
+                appendLine(it)
+            }
+        }
+    }
+
+    private fun getFileName(scenarios: List<TestScenario>): String {
+        return if (scenarios.isNotEmpty()) {
+            "${scenarios[0].function.name}Test"
+        } else ""
+    }
+
+    private fun getImports(scenarios: List<TestScenario>): List<String> {
+        val imports = mutableListOf<String>()
+
+        scenarios.forEach { scenario ->
+            scenario.imports.forEach { imp ->
+                imports.add(
+                    "${imp.packagePath}.${imp.functionName}"
+                )
+            }
+        }
+
+        return imports.distinct()
     }
 }

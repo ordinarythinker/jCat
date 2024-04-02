@@ -2,7 +2,7 @@ package com.ordinarythinker.jcat.generator
 
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
-import com.ordinarythinker.jcat.FunctionTest
+import com.ordinarythinker.jcat.models.TestScenario
 import com.ordinarythinker.jcat.utils.isComposableAnnotation
 import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFile
@@ -12,9 +12,9 @@ class CodeAnalyzer(
     private val file: KtFile,
 ) {
     private val functions = mutableListOf<KtNamedFunction>()
-    private val tests = mutableListOf<FunctionTest>()
+    private val tests = mutableListOf<TestScenario>()
 
-    fun analyze() : List<FunctionTest> {
+    fun analyze(): List<TestScenario> {
         // TODO: CodeAnalyzer.analyze() is waiting for implementation
         findComposables()
         return tests;

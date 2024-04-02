@@ -34,11 +34,11 @@ tasks {
     }
 
     runIde {
-        ideDir.set(file("C:\\Program Files\\Android\\Android Studio2"))
+        ideDir.set(file("C:\\Program Files\\Android\\Android Studio"))
     }
 
     patchPluginXml {
-        sinceBuild.set("223")
+        sinceBuild.set("232")
         untilBuild.set("241.*")
     }
 
