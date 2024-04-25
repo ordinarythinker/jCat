@@ -1,8 +1,8 @@
 package com.ordinarythinker.jcat.models
 
-import org.junit.rules.TestRule
+import com.ordinarythinker.jcat.enums.InteractionType
 
 data class TestNode(
     val nodeName: String,
-    val rule: TestRule
+    val rule: InteractionType
 )
