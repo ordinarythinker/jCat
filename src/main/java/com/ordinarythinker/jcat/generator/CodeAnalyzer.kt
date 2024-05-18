@@ -24,11 +24,17 @@ class CodeAnalyzer(
 ) {
     private val functions = mutableListOf<KtNamedFunction>()
     private val tests = mutableListOf<FunctionTest>()
+    private val mocker = Mocker()
 
     fun analyze(): List<FunctionTest> {
         // TODO: CodeAnalyzer.analyze() is waiting for implementation
         findComposables()
-        return tests;
+        // for each composable
+        // - extract parameters
+        // - make mocks
+        // - define modifiers
+
+        return tests
     }
 
     private fun findComposables() {
@@ -44,6 +50,29 @@ class CodeAnalyzer(
             }
         })
     }
+
+
+    private fun retrieveTestTagFromComposable(callExpression: KtCallExpression): String? {
+        // Find the Modifier.testTag call within the given composable call expression
+        val valueArguments = callExpression.valueArguments
+        for (arg in valueArguments) {
+            val argExpression = arg.getArgumentExpression()
+            if (argExpression != null && argExpression is KtDotQualifiedExpression) {
+                val receiverExpression = argExpression.receiverExpression
+                val selectorExpression = argExpression.selectorExpression
+                if (receiverExpression.text == "Modifier" && selectorExpression is KtCallExpression) {
+                    val testTagCallExpression = selectorExpression
+                    if (testTagCallExpression.calleeExpression?.text == "testTag") {
+                        val testTagValueArgument = testTagCallExpression.valueArguments.firstOrNull()
+                        val testTagValue = testTagValueArgument?.getArgumentExpression()?.text
+                        return testTagValue
+                    }
+                }
+            }
+        }
+        return null
+    }
+
 
     private fun getVisualTransformationType(element: PsiElement): VisualTransformationType? {
         when (element) {
