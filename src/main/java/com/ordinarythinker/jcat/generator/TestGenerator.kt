@@ -6,9 +6,10 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.codeStyle.CodeStyleManager
-import com.ordinarythinker.jcat.models.TestScenario
+import com.ordinarythinker.jcat.models.FunctionTest
 import com.ordinarythinker.jcat.settings.Settings
 import org.jetbrains.kotlin.idea.KotlinFileType
+import org.jetbrains.kotlin.psi.KtFile
 
 class TestGenerator(
     private val project: Project,
@@ -16,14 +17,15 @@ class TestGenerator(
 ) {
     private val settings: Settings = Settings.init(project)
 
-    fun generateTests() {
+    fun generateTests(ktFile: KtFile) {
 
     }
 
-    fun generateTestFile(composableFunctions: List<TestScenario>) {
+    // TODO: replace by generateTests method
+    fun generateTestFile(composableFunctions: List<FunctionTest>) {
         val codeStyleManager = CodeStyleManager.getInstance(project)
 
-        val fileText = buildTestFileText(composableFunctions, packageName)
+        val fileText = buildTestFileText(composableFunctions)
 
         val psiFile = PsiFileFactory.getInstance(project)
             .createFileFromText("MyComposeTest.kt", KotlinFileType.INSTANCE as FileType, fileText)
@@ -50,7 +52,7 @@ class TestGenerator(
         }
     }
 
-    private fun buildTestFileText(scenarios: List<TestScenario>, packageName: String): String {
+    private fun buildTestFileText(scenarios: List<FunctionTest>): String {
         val name = scenarios
         val imports: List<String> = getImports(scenarios)
 
@@ -80,7 +82,7 @@ class TestGenerator(
         return content
     }
 
-    private fun getTestScenario(scenario: TestScenario): String {
+    private fun getTestScenario(scenario: FunctionTest): String {
         return buildString {
             // TODO: getTestScenario
             appendLine("    @Test")
@@ -114,6 +116,8 @@ class TestGenerator(
             appendLine("import org.junit.Rule")
             appendLine("import org.junit.Test")
             appendLine("import org.junit.runner.RunWith")
+            appendLine("import org.mockito.kotlin.mock")
+            appendLine("import org.mockito.kotlin.whenever")
 
             imports.forEach {
                 appendLine(it)
@@ -121,13 +125,13 @@ class TestGenerator(
         }
     }
 
-    private fun getFileName(scenarios: List<TestScenario>): String {
+    private fun getFileName(scenarios: List<FunctionTest>): String {
         return if (scenarios.isNotEmpty()) {
             "${scenarios[0].function.name}Test"
         } else ""
     }
 
-    private fun getImports(scenarios: List<TestScenario>): List<String> {
+    private fun getImports(scenarios: List<FunctionTest>): List<String> {
         val imports = mutableListOf<String>()
 
         scenarios.forEach { scenario ->

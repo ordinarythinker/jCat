@@ -1,26 +1,16 @@
 package com.ordinarythinker.jcat.generator
 
+import com.ordinarythinker.jcat.models.Parameter
+import com.ordinarythinker.jcat.models.Params
 import kotlin.reflect.KClass
-import kotlin.reflect.KFunction
 import kotlin.reflect.full.declaredMemberProperties
-import kotlin.reflect.full.primaryConstructor
 import kotlin.reflect.jvm.jvmErasure
 import kotlin.random.Random
 import kotlin.reflect.full.isSubclassOf
 
-//import org.mockito.kotlin.mock
-//import org.mockito.kotlin.whenever
-
-data class Parameter(val name: String, val klazz: KClass<*>)
-
-sealed class Params {
-    data class SingleParam(val value: List<Any>) : Params()
-    data class MultipleParams(val list: List<List<Any>>) : Params()
-}
-
 class Mocker {
     private val stringValues = listOf("", "some random string")
-    private val intValues = listOf(-1, 0, Random.nextInt())
+    private val numberValues = listOf(-1, 0, Random.nextInt())
     private val booleanValues = listOf(true, false)
 
     fun generateMockData(parameterTypes: List<Parameter>): List<List<Any>> {
@@ -31,7 +21,11 @@ class Mocker {
     private fun getPossibleValues(kClass: KClass<*>): Params {
         return when {
             kClass == String::class -> Params.SingleParam(stringValues)
-            kClass == Int::class -> Params.SingleParam(intValues)
+            kClass == Int::class -> Params.SingleParam(numberValues)
+            kClass == Double::class -> Params.SingleParam(numberValues.map { it.toDouble() })
+            kClass == Float::class -> Params.SingleParam(numberValues.map { it.toFloat() })
+            kClass == Long::class -> Params.SingleParam(numberValues.map { it.toLong() })
+            kClass == Short::class -> Params.SingleParam(numberValues.map { it.toShort() })
             kClass == Boolean::class -> Params.SingleParam(booleanValues)
 
             kClass.isSubclassOf(Collection::class) -> {
@@ -81,50 +75,6 @@ class Mocker {
                 }
             }
         }
-    }
-
-    fun extractParameters(function: KFunction<*>): List<Parameter> {
-        return function.parameters.drop(1).map { parameter ->
-            Parameter(parameter.name ?: "unknown", parameter.type.jvmErasure)
-        }
-    }
-
-    fun generateMockCode(parameters: List<Parameter>, mockData: List<List<Any>>): List<String> {
-        val codeList = mutableListOf<String>()
-
-        mockData.forEachIndexed { index, params ->
-            val code = StringBuilder()
-            params.forEachIndexed { paramIndex, paramValue ->
-                val parameter = parameters[paramIndex]
-                val paramName = parameter.name
-                val paramClass = parameter.klazz
-
-                when {
-                    paramClass.isData -> {
-                        val mockName = "${paramName}Mock$index"
-                        code.append("val $mockName = mock<${paramClass.simpleName}> {\n")
-                        paramClass.primaryConstructor?.parameters?.forEach { constructorParam ->
-                            val property = paramClass.declaredMemberProperties.first { it.name == constructorParam.name }
-                            val propertyName = property.name
-                            code.append("    whenever(it.$propertyName).thenReturn(params[$paramIndex] as ${property.returnType.jvmErasure.simpleName})\n")
-                        }
-                        code.append("}\n")
-                    }
-                    paramClass == String::class || paramClass == Int::class || paramClass == Boolean::class -> {
-                        code.append("val ${paramName}Mock = params[$paramIndex] as ${paramClass.simpleName}\n")
-                    }
-                    paramClass.isSubclassOf(Collection::class) -> {
-                        code.append("val ${paramName}Mock = params[$paramIndex] as ${paramClass.simpleName}\n")
-                    }
-                    else -> {
-                        throw IllegalArgumentException("Unsupported type: ${paramClass.simpleName}")
-                    }
-                }
-            }
-            codeList.add(code.toString())
-        }
-
-        return codeList
     }
 }
 

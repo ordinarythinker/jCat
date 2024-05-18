@@ -8,21 +8,24 @@ import com.intellij.psi.PsiManager
 import com.intellij.psi.search.GlobalSearchScope
 import com.ordinarythinker.jcat.enums.KeyboardType
 import com.ordinarythinker.jcat.enums.VisualTransformationType
-import com.ordinarythinker.jcat.models.TestScenario
+import com.ordinarythinker.jcat.models.FunctionTest
+import com.ordinarythinker.jcat.models.Parameter
 import com.ordinarythinker.jcat.utils.isComposableAnnotation
 import org.jetbrains.kotlin.psi.*
 import kotlin.reflect.KMutableProperty
 import kotlin.reflect.KClass
-import kotlin.reflect.full.createInstance
-import kotlin.reflect.full.memberProperties
+import kotlin.reflect.KFunction
+import kotlin.reflect.full.*
+import kotlin.reflect.jvm.jvmErasure
 
 class CodeAnalyzer(
+    private val project: Project,
     private val file: KtFile,
 ) {
     private val functions = mutableListOf<KtNamedFunction>()
-    private val tests = mutableListOf<TestScenario>()
+    private val tests = mutableListOf<FunctionTest>()
 
-    fun analyze(): List<TestScenario> {
+    fun analyze(): List<FunctionTest> {
         // TODO: CodeAnalyzer.analyze() is waiting for implementation
         findComposables()
         return tests;
@@ -42,7 +45,7 @@ class CodeAnalyzer(
         })
     }
 
-    fun getVisualTransformationType(project: Project, element: PsiElement): VisualTransformationType? {
+    private fun getVisualTransformationType(element: PsiElement): VisualTransformationType? {
         when (element) {
             is KtNamedFunction -> {
                 // Check function declaration parameters
@@ -74,7 +77,7 @@ class CodeAnalyzer(
         return null
     }
 
-    fun findFunctionDeclaration(project: Project, functionName: String): KtNamedFunction? {
+    private fun findFunctionDeclaration(functionName: String): KtNamedFunction? {
         val psiManager = PsiManager.getInstance(project)
         val projectFileIndex = ProjectFileIndex.SERVICE.getInstance(project)
         val scope = GlobalSearchScope.allScope(project)
@@ -98,7 +101,7 @@ class CodeAnalyzer(
         return null
     }
 
-    fun getKeyboardType(project: Project, element: PsiElement): KeyboardType {
+    private fun getKeyboardType(element: PsiElement): KeyboardType {
         when (element) {
             is KtNamedFunction -> {
                 // Check function declaration parameters
@@ -148,31 +151,47 @@ class CodeAnalyzer(
         // TODO: CodeAnalyzer.makeMocks() is waiting for implementation
     }
 
-    private fun <T : Any> generateMockDataFromClass(clazz: KClass<T>): T? {
-        return when (clazz) {
-            String::class -> "MockString" as T
-            Int::class -> 0 as T
-            Long::class -> 0L as T
-            Float::class -> 0.0f as T
-            Double::class -> 0.0 as T
-            Boolean::class -> false as T
-            List::class -> listOf<Any>() as T
-            Map::class -> mapOf<Any, Any>() as T
-            else -> {
-                if (clazz.isData) {
-                    val properties = clazz.memberProperties
-                    val instance = clazz.createInstance()
-                    for (property in properties) {
-                        if (property is KMutableProperty<*>) {
-                            val mockValue = generateMockDataFromClass(property.returnType.classifier as KClass<*>)
-                            (property as KMutableProperty<Any?>).setter.call(instance, mockValue)
+    fun extractParameters(function: KFunction<*>): List<Parameter> {
+        return function.parameters.drop(1).map { parameter ->
+            Parameter(parameter.name ?: "unknown", parameter.type.jvmErasure)
+        }
+    }
+
+    fun generateMockCode(parameters: List<Parameter>, mockData: List<List<Any>>): List<String> {
+        val codeList = mutableListOf<String>()
+
+        mockData.forEachIndexed { index, params ->
+            val code = StringBuilder()
+            params.forEachIndexed { paramIndex, paramValue ->
+                val parameter = parameters[paramIndex]
+                val paramName = parameter.name
+                val paramClass = parameter.klazz
+
+                when {
+                    paramClass.isData -> {
+                        val mockName = "${paramName}Mock$index"
+                        code.append("val $mockName = mock<${paramClass.simpleName}> {\n")
+                        paramClass.primaryConstructor?.parameters?.forEach { constructorParam ->
+                            val property = paramClass.declaredMemberProperties.first { it.name == constructorParam.name }
+                            val propertyName = property.name
+                            code.append("    whenever(it.$propertyName).thenReturn(params[$paramIndex] as ${property.returnType.jvmErasure.simpleName})\n")
                         }
+                        code.append("}\n")
                     }
-                    instance
-                } else {
-                    null
+                    paramClass == String::class || paramClass == Int::class || paramClass == Boolean::class -> {
+                        code.append("val ${paramName}Mock = params[$paramIndex] as ${paramClass.simpleName}\n")
+                    }
+                    paramClass.isSubclassOf(Collection::class) -> {
+                        code.append("val ${paramName}Mock = params[$paramIndex] as ${paramClass.simpleName}\n")
+                    }
+                    else -> {
+                        throw IllegalArgumentException("Unsupported type: ${paramClass.simpleName}")
+                    }
                 }
             }
+            codeList.add(code.toString())
         }
+
+        return codeList
     }
 }
