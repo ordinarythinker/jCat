@@ -6,15 +6,20 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.PsiManager
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.util.PsiTreeUtil
 import com.ordinarythinker.jcat.enums.KeyboardType
 import com.ordinarythinker.jcat.enums.VisualTransformationType
 import com.ordinarythinker.jcat.models.FunctionTest
 import com.ordinarythinker.jcat.models.Parameter
+import com.ordinarythinker.jcat.models.TestNode
+import com.ordinarythinker.jcat.settings.Settings
+import com.ordinarythinker.jcat.utils.Cons.FUNCTION_IMAGE
+import com.ordinarythinker.jcat.utils.Cons.FUNCTION_TEXT
+import com.ordinarythinker.jcat.utils.Cons.emptyString
 import com.ordinarythinker.jcat.utils.isComposableAnnotation
+import com.ordinarythinker.jcat.utils.toKClass
+import org.jetbrains.kotlin.nj2k.postProcessing.resolve
 import org.jetbrains.kotlin.psi.*
-import kotlin.reflect.KMutableProperty
-import kotlin.reflect.KClass
-import kotlin.reflect.KFunction
 import kotlin.reflect.full.*
 import kotlin.reflect.jvm.jvmErasure
 
@@ -22,22 +27,44 @@ class CodeAnalyzer(
     private val project: Project,
     private val file: KtFile,
 ) {
+    private val mocker = Mocker()
+    private val settings: Settings = Settings.init(project)
+
     private val functions = mutableListOf<KtNamedFunction>()
     private val tests = mutableListOf<FunctionTest>()
-    private val mocker = Mocker()
 
     fun analyze(): List<FunctionTest> {
         // TODO: CodeAnalyzer.analyze() is waiting for implementation
-        findComposables()
+        findComposableDeclarations()
         // for each composable
-        // - extract parameters
-        // - make mocks
-        // - define modifiers
+        // - extract parameters         ✔
+        // - make mocks                 ✔
+        // - define composable calls    ✔
+        // - define their modifiers: if testTag is present, define type;
+        // if not the Image, Text or TextField, dig into the function but without creation mock for input params
+        // - in the sub calls define testTags and that's it
+        // - generate test
+        // - first iteration is ended
+
+        functions.forEach { function ->
+            val parameters = extractParameters(function)
+            val mocks = mocker.generateMockData(parameters)
+            val subFunctions = findComposableFunctionsInBody(function)
+            val imports = mutableListOf<String>()
+
+            val interactionsForScreen = mutableListOf<TestNode>()
+            subFunctions.forEach { uiComponent ->
+                val result = defineInteractionType(uiComponent)
+
+                interactionsForScreen.addAll(result.first)
+                imports.addAll(result.second)
+            }
+        }
 
         return tests
     }
 
-    private fun findComposables() {
+    private fun findComposableDeclarations() {
         file.acceptChildren(object : PsiElementVisitor() {
             override fun visitElement(element: PsiElement) {
                 if (element is KtNamedFunction) {
@@ -51,6 +78,38 @@ class CodeAnalyzer(
         })
     }
 
+    private fun findComposableFunctionsInBody(function: KtNamedFunction): List<KtCallExpression> {
+        val callExpressions = PsiTreeUtil.findChildrenOfType(function.bodyBlockExpression, KtCallExpression::class.java)
+        return callExpressions.filter { isComposableFunction(it) }
+    }
+
+    private fun isComposableFunction(callExpression: KtCallExpression): Boolean {
+        val resolvedFunction = try {
+            callExpression.resolve() as? KtNamedFunction?
+        } catch (e: Exception) {
+            null
+        }
+        val annotations = resolvedFunction?.annotationEntries
+        val isComposable = annotations?.any { it.isComposableAnnotation() }
+        return isComposable ?: false
+    }
+
+    private fun defineInteractionType(ktCallExpression: KtCallExpression): Pair<List<TestNode>, List<String>> {
+        val nodes = mutableListOf<TestNode>()
+        val imports = mutableListOf<String>()
+        val name = ktCallExpression.name ?: emptyString
+        val testTag = retrieveTestTagFromComposable(ktCallExpression)
+
+        when {
+            name != emptyString && (name == FUNCTION_IMAGE || name == FUNCTION_TEXT) -> {
+                testTag?.let { tag ->
+
+                }
+            }
+        }
+
+        return nodes to imports
+    }
 
     private fun retrieveTestTagFromComposable(callExpression: KtCallExpression): String? {
         // Find the Modifier.testTag call within the given composable call expression
@@ -171,18 +230,14 @@ class CodeAnalyzer(
         return KeyboardType.Text
     }
 
-    private fun analyzeContext(function: KtNamedFunction): KtExpression? {
-        // TODO: CodeAnalyzer.analyzeContext() is waiting for implementation
-        return null
-    }
-
     private fun makeMocks() {
         // TODO: CodeAnalyzer.makeMocks() is waiting for implementation
     }
 
-    fun extractParameters(function: KFunction<*>): List<Parameter> {
-        return function.parameters.drop(1).map { parameter ->
-            Parameter(parameter.name ?: "unknown", parameter.type.jvmErasure)
+    fun extractParameters(function: KtNamedFunction): List<Parameter> {
+        return function.valueParameters.map { parameter ->
+            val klazz = parameter.typeReference?.typeElement as KtClass
+            Parameter(parameter.name ?: "", klazz.toKClass())
         }
     }
 

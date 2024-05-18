@@ -15,8 +15,6 @@ class TestGenerator(
     private val project: Project,
     private val packageName: String
 ) {
-    private val settings: Settings = Settings.init(project)
-
     fun generateTests(ktFile: KtFile) {
 
     }
