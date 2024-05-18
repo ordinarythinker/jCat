@@ -7,15 +7,15 @@ import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.PsiManager
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTreeUtil
+import com.ordinarythinker.jcat.enums.InteractionType
 import com.ordinarythinker.jcat.enums.KeyboardType
 import com.ordinarythinker.jcat.enums.VisualTransformationType
 import com.ordinarythinker.jcat.models.FunctionTest
 import com.ordinarythinker.jcat.models.Parameter
 import com.ordinarythinker.jcat.models.TestNode
 import com.ordinarythinker.jcat.settings.Settings
-import com.ordinarythinker.jcat.utils.Cons.FUNCTION_IMAGE
-import com.ordinarythinker.jcat.utils.Cons.FUNCTION_TEXT
-import com.ordinarythinker.jcat.utils.Cons.emptyString
+import com.ordinarythinker.jcat.utils.Cons.clickables
+import com.ordinarythinker.jcat.utils.Cons.textFields
 import com.ordinarythinker.jcat.utils.isComposableAnnotation
 import com.ordinarythinker.jcat.utils.toKClass
 import org.jetbrains.kotlin.nj2k.postProcessing.resolve
@@ -56,7 +56,7 @@ class CodeAnalyzer(
             subFunctions.forEach { uiComponent ->
                 val result = defineInteractionType(uiComponent)
 
-                interactionsForScreen.addAll(result.first)
+                //interactionsForScreen.addAll(result.first)
                 imports.addAll(result.second)
             }
         }
@@ -94,16 +94,35 @@ class CodeAnalyzer(
         return isComposable ?: false
     }
 
-    private fun defineInteractionType(ktCallExpression: KtCallExpression): Pair<List<TestNode>, List<String>> {
-        val nodes = mutableListOf<TestNode>()
+    private fun defineInteractionType(ktCallExpression: KtCallExpression): Pair<List<List<TestNode>>, List<String>> {
+        val nodes = mutableListOf<List<TestNode>>()
         val imports = mutableListOf<String>()
-        val name = ktCallExpression.name ?: emptyString
+        val name = ktCallExpression.name
         val testTag = retrieveTestTagFromComposable(ktCallExpression)
 
-        when {
-            name != emptyString && (name == FUNCTION_IMAGE || name == FUNCTION_TEXT) -> {
-                testTag?.let { tag ->
+        if (name != null && testTag != null) {
+            if (!settings.excludeTags.contains(testTag)) {
+                when (name) {
+                    in textFields -> {
+                        // define text field type
+                    }
 
+                    in clickables -> {
+                        val testNoClicks = settings.forNode.firstOrNull { it.nodeTag == testTag }?.rules?.applyClickIgnore
+                            ?: settings.globalRules.applyClickIgnore
+
+                        val clicks = mutableListOf<InteractionType.Clickable>()
+                        if (testNoClicks) {
+                            clicks.add(InteractionType.Clickable.NoClick)
+                        }
+                        clicks.add(InteractionType.Clickable.PerformClick)
+                    }
+
+                    else -> {
+                        nodes.add(
+                            listOf(TestNode(testTag, InteractionType.Visibility))
+                        )
+                    }
                 }
             }
         }

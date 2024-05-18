@@ -26,3 +26,13 @@ sealed class InteractionType {
         ) : Input()
     }
 }
+
+sealed class Interaction {
+    data class Single(
+        val interactionType: InteractionType
+    ) : Interaction()
+
+    data class Multiple(
+        val interactions: List<InteractionType>
+    ) : Interaction()
+}
