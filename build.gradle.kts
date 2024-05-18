@@ -12,13 +12,14 @@ repositories {
 
 dependencies {
     implementation(kotlin("reflect"))
+    implementation("com.google.code.gson:gson:2.8.9")
 }
 
 apply(plugin = "org.jetbrains.intellij")
 apply(plugin = "org.jetbrains.kotlin.jvm")
 
 intellij {
-    version.set("2022.3.1")
+    version.set("2022.1.2")
     type.set("IC")
 
     plugins.set(listOf("android", "Kotlin"))

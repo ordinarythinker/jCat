@@ -7,12 +7,19 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.codeStyle.CodeStyleManager
 import com.ordinarythinker.jcat.models.TestScenario
+import com.ordinarythinker.jcat.settings.Settings
 import org.jetbrains.kotlin.idea.KotlinFileType
 
 class TestGenerator(
     private val project: Project,
     private val packageName: String
 ) {
+    private val settings: Settings = Settings.init(project)
+
+    fun generateTests() {
+
+    }
+
     fun generateTestFile(composableFunctions: List<TestScenario>) {
         val codeStyleManager = CodeStyleManager.getInstance(project)
 
