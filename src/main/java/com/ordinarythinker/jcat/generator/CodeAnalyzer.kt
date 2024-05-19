@@ -31,7 +31,7 @@ class CodeAnalyzer(
     private val project: Project,
     private val file: KtFile,
 ) {
-    private val mocker = Mocker()
+    private val mocker = Mocker(project)
     private val settings: Settings = Settings.init(project)
 
     private val functions = mutableListOf<KtNamedFunction>()
