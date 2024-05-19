@@ -19,6 +19,10 @@ object Cons {
     val clickables = listOf(FUNCTION_BUTTON, FUNCTION_ICON_BUTTON, FUNCTION_CHECKBOX, FUNCTION_RADIO_BUTTON,
         FUNCTION_SWITCH, FUNCTION_SLIDER, FUNCTION_DROPDOWN_MENU)
 
+    const val FUNCTION_TEXT = "Text"
+    const val FUNCTION_IMAGE = "Image"
+    val visibles = listOf(FUNCTION_TEXT, FUNCTION_IMAGE)
+
     const val emptyString = ""
     const val VALID_EMAIL = "example@email.com"
 }

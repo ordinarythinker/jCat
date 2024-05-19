@@ -12,8 +12,10 @@ class Mocker {
     private val stringValues = listOf("", "some random string")
     private val numberValues = listOf(-1, 0, Random.nextInt())
     private val booleanValues = listOf(true, false)
+    val imports: MutableList<String> = mutableListOf()
 
     fun generateMockData(parameterTypes: List<Parameter>): List<List<Any>> {
+        imports.clear()
         val paramValues = parameterTypes.map { getPossibleValues(it.klazz) }
         return generateCombinations(paramValues)
     }
@@ -39,6 +41,8 @@ class Mocker {
                 )
             }
             kClass.isData -> {
+                kClass.qualifiedName?.let { imports.add(it) }
+
                 val properties = kClass.declaredMemberProperties.map { it.returnType.jvmErasure }
                 Params.MultipleParams(
                     generateMockData(properties.map {

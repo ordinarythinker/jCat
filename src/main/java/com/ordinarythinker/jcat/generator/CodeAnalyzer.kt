@@ -7,6 +7,7 @@ import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.PsiManager
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTreeUtil
+import com.ordinarythinker.jcat.enums.Interaction
 import com.ordinarythinker.jcat.enums.InteractionType
 import com.ordinarythinker.jcat.enums.KeyboardType
 import com.ordinarythinker.jcat.enums.VisualTransformationType
@@ -16,6 +17,7 @@ import com.ordinarythinker.jcat.models.TestNode
 import com.ordinarythinker.jcat.settings.Settings
 import com.ordinarythinker.jcat.utils.Cons.clickables
 import com.ordinarythinker.jcat.utils.Cons.textFields
+import com.ordinarythinker.jcat.utils.Cons.visibles
 import com.ordinarythinker.jcat.utils.isComposableAnnotation
 import com.ordinarythinker.jcat.utils.toKClass
 import org.jetbrains.kotlin.nj2k.postProcessing.resolve
@@ -49,16 +51,23 @@ class CodeAnalyzer(
         functions.forEach { function ->
             val parameters = extractParameters(function)
             val mocks = mocker.generateMockData(parameters)
+            val imports = mocker.imports
             val subFunctions = findComposableFunctionsInBody(function)
-            val imports = mutableListOf<String>()
 
-            val interactionsForScreen = mutableListOf<TestNode>()
+            val interactionsForScreen = mutableListOf<List<TestNode>>()
             subFunctions.forEach { uiComponent ->
-                val result = defineInteractionType(uiComponent)
-
-                //interactionsForScreen.addAll(result.first)
-                imports.addAll(result.second)
+                val result = defineScenarios(uiComponent)
+                interactionsForScreen.addAll(result)
             }
+
+            tests.add(
+                FunctionTest(
+                    function = function,
+                    mocks = generateMockCode(parameters, mocks),
+                    imports = imports,
+                    testNodes = interactionsForScreen
+                )
+            )
         }
 
         return tests
@@ -94,17 +103,45 @@ class CodeAnalyzer(
         return isComposable ?: false
     }
 
-    private fun defineInteractionType(ktCallExpression: KtCallExpression): Pair<List<List<TestNode>>, List<String>> {
-        val nodes = mutableListOf<List<TestNode>>()
-        val imports = mutableListOf<String>()
+    private fun defineScenarios(ktCallExpression: KtCallExpression): List<List<TestNode>> {
+        val interactions = defineInteractionType(ktCallExpression)
+        return generateAllCombinations(interactions)
+    }
+
+    private fun defineInteractionType(ktCallExpression: KtCallExpression): List<Interaction> {
         val name = ktCallExpression.name
         val testTag = retrieveTestTagFromComposable(ktCallExpression)
+        val nodes = mutableListOf<Interaction>()
 
         if (name != null && testTag != null) {
             if (!settings.excludeTags.contains(testTag)) {
                 when (name) {
                     in textFields -> {
-                        // define text field type
+                        val keyboardType = getKeyboardType(ktCallExpression)
+                        val testNoInput = settings.forNode.firstOrNull { it.nodeTag == testTag }?.rules?.useEmptyStrings
+                            ?: settings.globalRules.useEmptyStrings
+
+                        val inputs = mutableListOf<InteractionType.Input>()
+                        if (testNoInput) {
+                            inputs.add(InteractionType.Input.NoInput)
+                        }
+
+                        when (keyboardType) {
+                            KeyboardType.Number, KeyboardType.Phone, KeyboardType.Decimal, KeyboardType.NumberPassword -> {
+                                inputs.add(InteractionType.Input.NumberInput())
+                            }
+                            KeyboardType.Text, KeyboardType.Password -> {
+                                inputs.add(InteractionType.Input.RandomStringInput())
+                            }
+                            KeyboardType.Email -> {
+                                inputs.add(InteractionType.Input.RandomStringInput())
+                                inputs.add(InteractionType.Input.ValidEmailInput())
+                            }
+                        }
+
+                        nodes.add(
+                            Interaction.Multiple(testTag, inputs)
+                        )
                     }
 
                     in clickables -> {
@@ -116,18 +153,73 @@ class CodeAnalyzer(
                             clicks.add(InteractionType.Clickable.NoClick)
                         }
                         clicks.add(InteractionType.Clickable.PerformClick)
+
+                        nodes.add(
+                            Interaction.Multiple(testTag, clicks)
+                        )
+                    }
+
+                    in visibles -> {
+                        nodes.add(
+                            Interaction.Single(testTag, InteractionType.Visibility)
+                        )
                     }
 
                     else -> {
-                        nodes.add(
-                            listOf(TestNode(testTag, InteractionType.Visibility))
-                        )
+                        val resolvedFunction = try {
+                            ktCallExpression.reference?.resolve() as? KtNamedFunction
+                        } catch (e: Exception) {
+                            null
+                        }
+
+                        resolvedFunction?.let { declaration ->
+                            val nestedFunctions = findComposableFunctionsInBody(declaration)
+                            nestedFunctions.forEach { nestedFunction ->
+                                val nestedInteractions = defineInteractionType(nestedFunction)
+                                nodes.addAll(nestedInteractions)
+                            }
+                        }
                     }
                 }
             }
         }
 
-        return nodes to imports
+        return nodes
+    }
+
+    private fun generateAllCombinations(nodes: List<Interaction>): List<List<TestNode>> {
+        if (nodes.isEmpty()) return emptyList()
+
+        val combinations = mutableListOf<List<TestNode>>()
+        generateCombinationsRecursive(nodes, 0, mutableListOf(), combinations)
+        return combinations
+    }
+
+    private fun generateCombinationsRecursive(
+        nodes: List<Interaction>,
+        index: Int,
+        currentCombination: MutableList<TestNode>,
+        combinations: MutableList<List<TestNode>>
+    ) {
+        if (index == nodes.size) {
+            combinations.add(currentCombination.toList())
+            return
+        }
+
+        when (val interaction = nodes[index]) {
+            is Interaction.Single -> {
+                currentCombination.add(TestNode(interaction.testTag, interaction.interaction))
+                generateCombinationsRecursive(nodes, index + 1, currentCombination, combinations)
+                currentCombination.removeAt(currentCombination.size - 1)
+            }
+            is Interaction.Multiple -> {
+                interaction.interactions.forEach { interactionType ->
+                    currentCombination.add(TestNode(interaction.testTag, interactionType))
+                    generateCombinationsRecursive(nodes, index + 1, currentCombination, combinations)
+                    currentCombination.removeAt(currentCombination.size - 1)
+                }
+            }
+        }
     }
 
     private fun retrieveTestTagFromComposable(callExpression: KtCallExpression): String? {
@@ -150,7 +242,6 @@ class CodeAnalyzer(
         }
         return null
     }
-
 
     private fun getVisualTransformationType(element: PsiElement): VisualTransformationType? {
         when (element) {
@@ -247,10 +338,6 @@ class CodeAnalyzer(
         }
         // If keyboardOptions parameter is not present or no keyboardType specified, return default Text
         return KeyboardType.Text
-    }
-
-    private fun makeMocks() {
-        // TODO: CodeAnalyzer.makeMocks() is waiting for implementation
     }
 
     fun extractParameters(function: KtNamedFunction): List<Parameter> {

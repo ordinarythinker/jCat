@@ -29,10 +29,12 @@ sealed class InteractionType {
 
 sealed class Interaction {
     data class Single(
-        val interactionType: InteractionType
+        val testTag: String,
+        val interaction: InteractionType
     ) : Interaction()
 
     data class Multiple(
+        val testTag: String,
         val interactions: List<InteractionType>
     ) : Interaction()
 }

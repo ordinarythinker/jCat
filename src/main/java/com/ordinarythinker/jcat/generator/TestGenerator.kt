@@ -7,7 +7,6 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.codeStyle.CodeStyleManager
 import com.ordinarythinker.jcat.models.FunctionTest
-import com.ordinarythinker.jcat.settings.Settings
 import org.jetbrains.kotlin.idea.KotlinFileType
 import org.jetbrains.kotlin.psi.KtFile
 
@@ -118,7 +117,7 @@ class TestGenerator(
             appendLine("import org.mockito.kotlin.whenever")
 
             imports.forEach {
-                appendLine(it)
+                appendLine("import $it")
             }
         }
     }
@@ -133,11 +132,7 @@ class TestGenerator(
         val imports = mutableListOf<String>()
 
         scenarios.forEach { scenario ->
-            scenario.imports.forEach { imp ->
-                imports.add(
-                    "${imp.packagePath}.${imp.functionName}"
-                )
-            }
+            imports.addAll(scenario.imports)
         }
 
         return imports.distinct()
