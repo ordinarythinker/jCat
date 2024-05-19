@@ -1,8 +1,8 @@
 package com.ordinarythinker.jcat.models
 
-import kotlin.reflect.KClass
+import org.jetbrains.kotlin.psi.KtClass
 
 data class Parameter(
     val name: String,
-    val klazz: KClass<*>
+    val klazz: KtClass
 )

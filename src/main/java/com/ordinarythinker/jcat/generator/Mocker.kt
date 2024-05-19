@@ -2,11 +2,9 @@ package com.ordinarythinker.jcat.generator
 
 import com.ordinarythinker.jcat.models.Parameter
 import com.ordinarythinker.jcat.models.Params
-import kotlin.reflect.KClass
-import kotlin.reflect.full.declaredMemberProperties
-import kotlin.reflect.jvm.jvmErasure
+import org.jetbrains.kotlin.psi.KtClass
+import org.jetbrains.kotlin.psi.KtUserType
 import kotlin.random.Random
-import kotlin.reflect.full.isSubclassOf
 
 class Mocker {
     private val stringValues = listOf("", "some random string")
@@ -20,37 +18,47 @@ class Mocker {
         return generateCombinations(paramValues)
     }
 
-    private fun getPossibleValues(kClass: KClass<*>): Params {
+    private fun getPossibleValues(kClass: KtClass): Params {
         return when {
-            kClass == String::class -> Params.SingleParam(stringValues)
-            kClass == Int::class -> Params.SingleParam(numberValues)
-            kClass == Double::class -> Params.SingleParam(numberValues.map { it.toDouble() })
-            kClass == Float::class -> Params.SingleParam(numberValues.map { it.toFloat() })
-            kClass == Long::class -> Params.SingleParam(numberValues.map { it.toLong() })
-            kClass == Short::class -> Params.SingleParam(numberValues.map { it.toShort() })
-            kClass == Boolean::class -> Params.SingleParam(booleanValues)
-
-            kClass.isSubclassOf(Collection::class) -> {
-                val elementType = kClass.supertypes.first().arguments.first().type?.classifier as KClass<*>
-                val elementValues = (getPossibleValues(elementType) as Params.SingleParam).value
-                Params.MultipleParams(
-                    listOf(
-                        emptyList(),
-                        List(5) { elementValues.random() }
-                    )
-                )
+            kClass.name == "String" -> {
+                Params.SingleParam(stringValues)
             }
-            kClass.isData -> {
-                kClass.qualifiedName?.let { imports.add(it) }
+            kClass.name == "Int" -> {
+                Params.SingleParam(numberValues)
+            }
+            kClass.name == "Double" -> {
+                Params.SingleParam(numberValues.map { it.toDouble() })
+            }
+            kClass.name == "Float" -> {
+                Params.SingleParam(numberValues.map { it.toFloat() })
+            }
+            kClass.name == "Long" -> {
+                Params.SingleParam(numberValues.map { it.toLong() })
+            }
+            kClass.name == "Short" -> {
+                Params.SingleParam(numberValues.map { it.toShort() })
+            }
+            kClass.name == "Boolean" -> {
+                Params.SingleParam(booleanValues)
+            }
 
-                val properties = kClass.declaredMemberProperties.map { it.returnType.jvmErasure }
+            kClass.isData() -> {
+                kClass.fqName?.asString()?.let { imports.add(it) }
+
+                val properties = kClass.getProperties()
                 Params.MultipleParams(
                     generateMockData(properties.map {
-                        Parameter(it.qualifiedName!!, it)
+                        Parameter(it.name ?: "", it.typeReference?.let { typeRef ->
+                            (typeRef.typeElement as? KtUserType)?.referencedName?.let { typeName ->
+                                kClass.containingKtFile.classes.firstOrNull { it.name == typeName }
+                            } as KtClass
+                        } ?: throw IllegalArgumentException("Parameter type reference not found"))
                     })
                 )
             }
-            else -> throw IllegalArgumentException("Unsupported type: $kClass")
+            else -> {
+                throw IllegalArgumentException("Unsupported type: ${kClass.name}")
+            }
         }
     }
 
@@ -81,26 +89,3 @@ class Mocker {
         }
     }
 }
-
-// Example usage
-/*
-fun main() {
-    data class User(val name: String, val age: Int)
-
-    @Composable
-    fun UserInfo(user: User, isEditingEnabled: Boolean, email: String) {
-        // Your composable function implementation
-    }
-
-    val mocker = Mocker()
-    val userInfoFunction = ::UserInfo
-    val parameterList = mocker.extractParameters(userInfoFunction)
-
-    val mockData = mocker.generateMockData(parameterList)
-    val generatedCode = mocker.generateMockCode(parameterList, mockData)
-
-    generatedCode.forEach { code ->
-        println(code)
-    }
-}
-*/

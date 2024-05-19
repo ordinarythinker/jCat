@@ -78,7 +78,7 @@ class ProcessKtFileAction : AnAction() {
         if (composableFunctions.isNotEmpty()) {
             val packageName = psiFile.packageFqName.asString()
             val testGenerator = TestGenerator(project, packageName)
-            //testGenerator.generateTestFile(composableFunctions, packageName)
+            testGenerator.generateTests(ktFile)
         }
     }
 }

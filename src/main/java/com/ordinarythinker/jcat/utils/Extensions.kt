@@ -3,6 +3,7 @@ package com.ordinarythinker.jcat.utils
 import com.intellij.psi.PsiFile
 import org.jetbrains.kotlin.psi.KtAnnotationEntry
 import org.jetbrains.kotlin.psi.KtClass
+import org.jetbrains.kotlin.psi.KtProperty
 import java.util.*
 import kotlin.reflect.KClass
 
@@ -31,4 +32,24 @@ fun generateRandomString(length: Int = Random().nextInt(100)): String {
         .map { Random().nextInt(0, charPool.size) }
         .map(charPool::get)
         .joinToString("")
+}
+
+fun KtClass.isString(): Boolean {
+    return this.name == "String"
+}
+
+fun KtClass.isInt(): Boolean {
+    return this.name == "Int"
+}
+
+fun KtClass.isBoolean(): Boolean {
+    return this.name == "Boolean"
+}
+
+fun KtClass.isCollection(): Boolean {
+    return this.superTypeListEntries.any { it.text.startsWith("kotlin.collections.Collection<") }
+}
+
+fun KtClass.getProperties(): List<KtProperty> {
+    return this.declarations.filterIsInstance<KtProperty>()
 }

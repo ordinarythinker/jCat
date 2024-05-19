@@ -2,9 +2,7 @@ package com.ordinarythinker.jcat.generator
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectFileIndex
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiElementVisitor
-import com.intellij.psi.PsiManager
+import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTreeUtil
 import com.ordinarythinker.jcat.enums.Interaction
@@ -15,15 +13,19 @@ import com.ordinarythinker.jcat.models.FunctionTest
 import com.ordinarythinker.jcat.models.Parameter
 import com.ordinarythinker.jcat.models.TestNode
 import com.ordinarythinker.jcat.settings.Settings
+import com.ordinarythinker.jcat.utils.*
 import com.ordinarythinker.jcat.utils.Cons.clickables
 import com.ordinarythinker.jcat.utils.Cons.textFields
 import com.ordinarythinker.jcat.utils.Cons.visibles
-import com.ordinarythinker.jcat.utils.isComposableAnnotation
-import com.ordinarythinker.jcat.utils.toKClass
+import org.jetbrains.kotlin.descriptors.ClassDescriptor
+import org.jetbrains.kotlin.idea.caches.resolve.analyze
+import org.jetbrains.kotlin.idea.stubindex.KotlinFullClassNameIndex
 import org.jetbrains.kotlin.nj2k.postProcessing.resolve
 import org.jetbrains.kotlin.psi.*
-import kotlin.reflect.full.*
-import kotlin.reflect.jvm.jvmErasure
+import org.jetbrains.kotlin.resolve.BindingContext
+import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
+import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
+import org.jetbrains.kotlin.types.KotlinType
 
 class CodeAnalyzer(
     private val project: Project,
@@ -36,17 +38,7 @@ class CodeAnalyzer(
     private val tests = mutableListOf<FunctionTest>()
 
     fun analyze(): List<FunctionTest> {
-        // TODO: CodeAnalyzer.analyze() is waiting for implementation
         findComposableDeclarations()
-        // for each composable
-        // - extract parameters         ✔
-        // - make mocks                 ✔
-        // - define composable calls    ✔
-        // - define their modifiers: if testTag is present, define type; ✔
-        // if not the Image, Text or TextField, dig into the function but without creation mock for input params ✔
-        // - in the sub calls define testTags and that's it ✔
-        // - generate test              ✔
-        // - first iteration is ended   ✔
 
         functions.forEach { function ->
             val parameters = extractParameters(function)
@@ -342,13 +334,104 @@ class CodeAnalyzer(
     }
 
     fun extractParameters(function: KtNamedFunction): List<Parameter> {
-        return function.valueParameters.map { parameter ->
-            val klazz = parameter.typeReference?.typeElement as KtClass
-            Parameter(parameter.name ?: "", klazz.toKClass())
+        val parameters = mutableListOf<Parameter>()
+
+        function.valueParameters.forEach { parameter ->
+            val paramName = parameter.name ?: return@forEach
+            val paramTypeRef = parameter.typeReference ?: return@forEach
+            val bindingContext = paramTypeRef.analyze(BodyResolveMode.PARTIAL)
+            val kotlinType = bindingContext[BindingContext.TYPE, paramTypeRef] ?: return@forEach
+            val paramClass = findClassByName(kotlinType)
+
+            if (paramClass != null) {
+                parameters.add(Parameter(name = paramName, klazz = paramClass))
+            }
         }
+
+        return parameters
     }
 
+    private fun findClassByName(kotlinType: KotlinType): KtClass? {
+        val classDescriptor = kotlinType.constructor.declarationDescriptor as? ClassDescriptor
+        val fqName = classDescriptor?.fqNameSafe
+
+        return if (fqName != null) {
+            val project = file.project
+            val psiClass = KotlinFullClassNameIndex.getInstance()
+                .get(fqName.asString(), project, GlobalSearchScope.allScope(project))
+                .firstOrNull() as? KtClassOrObject
+            psiClass as? KtClass
+        } else null
+    }
+
+    /*private fun resolveKotlinTypeToKClass(kotlinType: KotlinType): KClass<*> {
+        val classDescriptor = kotlinType.constructor.declarationDescriptor as? ClassDescriptor
+        val fqName = classDescriptor?.fqNameSafe?.asString()
+        return try {
+            val psiFile = file as PsiFile
+            val project = psiFile.project
+            val module = psiFile.module
+
+            if (fqName != null && module != null) {
+                val psiClass = JavaPsiFacade
+                    .getInstance(project)
+                    .findClass(
+                        fqName,
+                        GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(module)
+                    )
+
+                if (psiClass != null) {
+                    val clazz = Class.forName(psiClass.qualifiedName, true, psiClass::class.java.classLoader)
+                    clazz.kotlin
+                } else {
+                    Any::class
+                }
+            } else {
+                Any::class
+            }
+        } catch (e: ClassNotFoundException) {
+            Any::class
+        }
+    }*/
+
     fun generateMockCode(parameters: List<Parameter>, mockData: List<List<Any>>): List<String> {
+        val codeList = mutableListOf<String>()
+
+        mockData.forEachIndexed { index, params ->
+            val code = StringBuilder()
+            params.forEachIndexed { paramIndex, paramValue ->
+                val parameter = parameters[paramIndex]
+                val paramName = parameter.name
+                val paramClass = parameter.klazz
+
+                when {
+                    paramClass.isData() -> {
+                        val mockName = "${paramName}Mock$index"
+                        code.append("val $mockName = mock<${paramClass.name}> {\n")
+                        paramClass.primaryConstructorParameters.forEach { constructorParam ->
+                            val propertyName = constructorParam.name
+                            code.append("    whenever(it.$propertyName).thenReturn(params[$paramIndex] as ${constructorParam.typeReference?.text})\n")
+                        }
+                        code.append("}\n")
+                    }
+                    paramClass.isString() || paramClass.isInt() || paramClass.isBoolean() -> {
+                        code.append("val ${paramName}Mock = params[$paramIndex] as ${paramClass.name}\n")
+                    }
+                    paramClass.isCollection() -> {
+                        code.append("val ${paramName}Mock = params[$paramIndex] as ${paramClass.name}\n")
+                    }
+                    else -> {
+                        throw IllegalArgumentException("Unsupported type: ${paramClass.name}")
+                    }
+                }
+            }
+            codeList.add(code.toString())
+        }
+
+        return codeList
+    }
+
+    /*fun generateMockCode(parameters: List<Parameter>, mockData: List<List<Any>>): List<String> {
         val codeList = mutableListOf<String>()
 
         mockData.forEachIndexed { index, params ->
@@ -384,5 +467,5 @@ class CodeAnalyzer(
         }
 
         return codeList
-    }
+    }*/
 }
