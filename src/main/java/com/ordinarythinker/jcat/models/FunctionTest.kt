@@ -4,7 +4,8 @@ import org.jetbrains.kotlin.psi.KtFunction
 
 data class FunctionTest(
     val function: KtFunction,
+    val parameters: List<String> = listOf(),
     val mocks: List<String> = listOf(),
     val imports: List<String> = listOf(),
-    val testNodes: List<List<TestNode>> = listOf()
+    val scenarios: List<List<TestNode>> = listOf()
 )

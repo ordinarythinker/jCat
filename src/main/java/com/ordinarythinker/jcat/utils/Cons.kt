@@ -23,6 +23,14 @@ object Cons {
     const val FUNCTION_IMAGE = "Image"
     val visibles = listOf(FUNCTION_TEXT, FUNCTION_IMAGE)
 
+    const val COMPOSE_TEST_RULE = "composeTestRule"
+    const val ON_NODE_WITH_TAG = "onNodeWithTag"
+    const val ASSERT_IS_DISPLAYED = "assertIsDisplayed"
+    const val PERFORM_TEXT_INPUT = "performTextInput"
+    const val PERFORM_CLICK = "performClick"
+    const val ASSERT = "assert"
+    const val HAS_TEXT = "hasText"
+
     const val emptyString = ""
     const val VALID_EMAIL = "example@email.com"
 }

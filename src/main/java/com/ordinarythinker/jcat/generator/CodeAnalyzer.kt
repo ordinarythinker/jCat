@@ -42,11 +42,11 @@ class CodeAnalyzer(
         // - extract parameters         ✔
         // - make mocks                 ✔
         // - define composable calls    ✔
-        // - define their modifiers: if testTag is present, define type;
-        // if not the Image, Text or TextField, dig into the function but without creation mock for input params
-        // - in the sub calls define testTags and that's it
-        // - generate test
-        // - first iteration is ended
+        // - define their modifiers: if testTag is present, define type; ✔
+        // if not the Image, Text or TextField, dig into the function but without creation mock for input params ✔
+        // - in the sub calls define testTags and that's it ✔
+        // - generate test              ✔
+        // - first iteration is ended   ✔
 
         functions.forEach { function ->
             val parameters = extractParameters(function)
@@ -63,9 +63,10 @@ class CodeAnalyzer(
             tests.add(
                 FunctionTest(
                     function = function,
+                    parameters = parameters.map { it.name },
                     mocks = generateMockCode(parameters, mocks),
                     imports = imports,
-                    testNodes = interactionsForScreen
+                    scenarios = interactionsForScreen
                 )
             )
         }

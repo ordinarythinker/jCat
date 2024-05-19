@@ -25,6 +25,18 @@ sealed class InteractionType {
             val value: String = generateRandomString()
         ) : Input()
     }
+
+    fun toDescription(): String {
+        return when (this) {
+            Clickable.NoClick -> "no click"
+            Clickable.PerformClick -> "click is performed"
+            Input.NoInput -> "no input"
+            is Input.NumberInput -> "number input"
+            is Input.RandomStringInput -> "random string input"
+            is Input.ValidEmailInput -> "valid email input (${this.value})"
+            Visibility -> "visibility check"
+        }
+    }
 }
 
 sealed class Interaction {
