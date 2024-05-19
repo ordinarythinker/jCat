@@ -16,16 +16,6 @@ fun PsiFile.isKtFile(): Boolean {
     return this.javaClass.kotlin.qualifiedName == "org.jetbrains.kotlin.psi.KtFile"
 }
 
-fun KtClass.toKClass(): KClass<*> {
-    val fqName = this.fqName?.asString()
-    val loadedClass: Class<*> = try {
-        Class.forName(fqName)
-    } catch (e: ClassNotFoundException) {
-        Any::class.java
-    }
-    return loadedClass.kotlin
-}
-
 fun generateRandomString(length: Int = Random().nextInt(100)): String {
     val charPool: List<Char> = ('a'..'z') + ('A'..'Z') + ('0'..'9')
     return (1..length)
