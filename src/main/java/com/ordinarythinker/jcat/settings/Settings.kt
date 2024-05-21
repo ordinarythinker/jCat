@@ -20,7 +20,7 @@ data class Settings(
                 excludeTags = emptyList(),
                 globalRules = Rules(
                     applyClickIgnore = true,
-                    useEmptyStrings = false,
+                    useEmptyStrings = true,
                     useNegativeNumbers = false,
                     testConditionals = true
                 ),

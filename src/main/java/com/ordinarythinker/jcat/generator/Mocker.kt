@@ -3,14 +3,12 @@ package com.ordinarythinker.jcat.generator
 import com.intellij.openapi.project.Project
 import com.intellij.psi.search.GlobalSearchScope
 import com.ordinarythinker.jcat.models.Parameter
-import com.ordinarythinker.jcat.models.Params
+import com.ordinarythinker.jcat.settings.Settings
+import com.ordinarythinker.jcat.utils.generateRandomString
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
 import org.jetbrains.kotlin.idea.stubindex.KotlinFullClassNameIndex
-import org.jetbrains.kotlin.psi.KtClass
-import org.jetbrains.kotlin.psi.KtClassOrObject
-import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtUserType
+import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
@@ -20,44 +18,61 @@ import kotlin.random.Random
 class Mocker(
     private val project: Project
 ) {
-    private val stringValues = listOf("", "some random string")
-    private val numberValues = listOf(-1, 0, Random.nextInt())
+    private val settings: Settings = Settings.init(project)
     private val booleanValues = listOf(true, false)
     val imports: MutableList<String> = mutableListOf()
 
-    fun generateMockData(parameterTypes: List<Parameter>): List<List<Any>> {
-        val paramValues = parameterTypes.map { getPossibleValues(it.klazz) }
-        return generateCombinations(paramValues)
+    fun generateMockData(parameters: List<Parameter>): List<String> {
+        val paramValues = parameters.map { getPossibleValues(it) }
+        val linearized = getAllCombinations(paramValues)
+
+        return linearized.mapNotNull { list ->
+            try {
+                parameters.mapIndexed { index, property ->
+                    "${property.name} = ${list[index]}"
+                }
+                    .joinToString(", ")
+            } catch (e: Exception) {
+                null
+            }
+        }
     }
 
-    private fun getPossibleValues(kClass: KtClass): Params {
+    private fun getPossibleValues(parameter: Parameter): List<Any> {
+        val numberValues = getNumberValues()
         return when {
-            kClass.name == "String" -> {
-                Params.SingleParam(stringValues)
+            parameter.klazz.name == "String" -> {
+                getStringValues().map { "${parameter.name} = $it" }
             }
-            kClass.name == "Int" -> {
-                Params.SingleParam(numberValues)
+            parameter.klazz.name == "Int" -> {
+                numberValues.map { "${parameter.name} = $it" }
             }
-            kClass.name == "Double" -> {
-                Params.SingleParam(numberValues.map { it.toDouble() })
+            parameter.klazz.name == "Double" -> {
+                numberValues.map { it.toDouble() }.map { "${parameter.name} = $it" }
             }
-            kClass.name == "Float" -> {
-                Params.SingleParam(numberValues.map { it.toFloat() })
+            parameter.klazz.name == "Float" -> {
+                numberValues.map { it.toFloat() }.map { "${parameter.name} = $it" }
             }
-            kClass.name == "Long" -> {
-                Params.SingleParam(numberValues.map { it.toLong() })
+            parameter.klazz.name == "Long" -> {
+                numberValues.map { it.toLong() }.map { "${parameter.name} = $it" }
             }
-            kClass.name == "Short" -> {
-                Params.SingleParam(numberValues.map { it.toShort() })
+            parameter.klazz.name == "Short" -> {
+                numberValues.map { it.toShort() }.map { "${parameter.name} = $it" }
             }
-            kClass.name == "Boolean" -> {
-                Params.SingleParam(booleanValues)
+            parameter.klazz.name == "Boolean" -> {
+                booleanValues.map { "${parameter.name} = $it" }
             }
 
-            kClass.isData() -> {
-                kClass.fqName?.asString()?.let { imports.add(it) }
+            parameter.klazz.isEnum() -> {
+                parameter.klazz.declarations.filterIsInstance<KtEnumEntry>().map { entry ->
+                    "${parameter.klazz.name}.${entry.name}"
+                }.map { "${parameter.name} = $it" }
+            }
 
-                val properties = kClass.primaryConstructorParameters.mapNotNull { parameter ->
+            parameter.klazz.isData() -> {
+                parameter.klazz.fqName?.asString()?.let { imports.add(it) }
+
+                val properties = parameter.klazz.primaryConstructorParameters.mapNotNull { parameter ->
                     val propertyName = parameter.name
                     val propertyType = parameter.typeReference
                     val bindingContext = propertyType?.analyze(BodyResolveMode.PARTIAL)
@@ -71,12 +86,40 @@ class Mocker(
                     }
                 }
 
-                Params.MultipleParams(generateMockData(properties))
+                val propertyValues = properties.map { property ->
+                    getPossibleValues(property)
+                }
+
+                val linearized = getAllCombinations(propertyValues)
+
+                return linearized.map {
+                    "${parameter.klazz.name}(${it.joinToString(", ")})"
+                }
             }
             else -> {
-                throw IllegalArgumentException("Unsupported type: ${kClass.name}")
+                emptyList()
             }
         }
+    }
+
+    private fun getStringValues(): List<String> {
+        val stringValues = mutableListOf(
+            "\"${generateRandomString(20)}\""
+        )
+
+        if (settings.globalRules.useEmptyStrings) {
+            stringValues.add("\"\"")
+        }
+        return stringValues
+    }
+
+    private fun getNumberValues(): List<Int> {
+        val numberValues = mutableListOf(Random.nextInt(100))
+
+        if (settings.globalRules.useNegativeNumbers) {
+            numberValues.add(-1)
+        }
+        return numberValues
     }
 
     private fun findClassByName(kotlinType: KotlinType): KtClass? {
@@ -91,30 +134,24 @@ class Mocker(
         } else null
     }
 
-    private fun generateCombinations(params: List<Params>): List<List<Any>> {
-        if (params.isEmpty()) return listOf(emptyList())
+    fun <T> getAllCombinations(lists: List<List<T>>): List<List<T>> {
+        if (lists.isEmpty()) {
+            return listOf(emptyList())
+        }
 
-        val firstParam = params.first()
-        val restParams = params.drop(1)
-        val restCombinations = generateCombinations(restParams)
+        val head = lists.first()
+        val tail = lists.drop(1)
+        val combinations = getAllCombinations(tail)
 
-        return when (firstParam) {
-            is Params.SingleParam -> {
-                firstParam.value.flatMap { value ->
-                    restCombinations.map { combination ->
-                        listOf(value) + combination
-                    }
-                }
-            }
-            is Params.MultipleParams -> {
-                firstParam.list.flatMap { valueList ->
-                    valueList.flatMap { value ->
-                        restCombinations.map { combination ->
-                            listOf(value) + combination
-                        }
-                    }
-                }
+        val result = mutableListOf<List<T>>()
+        for (element in head) {
+            for (combination in combinations) {
+                val newCombination = mutableListOf(element)
+                newCombination.addAll(combination)
+                result.add(newCombination)
             }
         }
+
+        return result
     }
 }

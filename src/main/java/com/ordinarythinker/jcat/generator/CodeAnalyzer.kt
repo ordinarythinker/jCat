@@ -56,7 +56,7 @@ class CodeAnalyzer(
                 FunctionTest(
                     function = function,
                     parameters = parameters.map { it.name },
-                    mocks = generateMockCode(parameters, mocks),
+                    mocks = mocks,
                     imports = imports,
                     scenarios = interactionsForScreen
                 )
@@ -216,7 +216,6 @@ class CodeAnalyzer(
     }
 
     private fun retrieveTestTagFromComposable(callExpression: KtCallExpression): String? {
-        // Find the Modifier.testTag call within the given composable call expression
         val valueArguments = callExpression.valueArguments
         for (arg in valueArguments) {
             val argExpression = arg.getArgumentExpression()
@@ -364,103 +363,39 @@ class CodeAnalyzer(
         } else null
     }
 
-    /*private fun resolveKotlinTypeToKClass(kotlinType: KotlinType): KClass<*> {
-        val classDescriptor = kotlinType.constructor.declarationDescriptor as? ClassDescriptor
-        val fqName = classDescriptor?.fqNameSafe?.asString()
-        return try {
-            val psiFile = file as PsiFile
-            val project = psiFile.project
-            val module = psiFile.module
-
-            if (fqName != null && module != null) {
-                val psiClass = JavaPsiFacade
-                    .getInstance(project)
-                    .findClass(
-                        fqName,
-                        GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(module)
-                    )
-
-                if (psiClass != null) {
-                    val clazz = Class.forName(psiClass.qualifiedName, true, psiClass::class.java.classLoader)
-                    clazz.kotlin
-                } else {
-                    Any::class
-                }
-            } else {
-                Any::class
-            }
-        } catch (e: ClassNotFoundException) {
-            Any::class
-        }
-    }*/
-
-    fun generateMockCode(parameters: List<Parameter>, mockData: List<List<Any>>): List<String> {
-        val codeList = mutableListOf<String>()
-
-        mockData.forEachIndexed { index, params ->
-            val code = StringBuilder()
-            params.forEachIndexed { paramIndex, paramValue ->
-                val parameter = parameters[paramIndex]
-                val paramName = parameter.name
-                val paramClass = parameter.klazz
-
-                when {
-                    paramClass.isData() -> {
-                        val mockName = "${paramName}Mock$index"
-                        code.append("val $mockName = mock<${paramClass.name}> {\n")
-                        paramClass.primaryConstructorParameters.forEach { constructorParam ->
-                            val propertyName = constructorParam.name
-                            code.append("    whenever(it.$propertyName).thenReturn(params[$paramIndex] as ${constructorParam.typeReference?.text})\n")
-                        }
-                        code.append("}\n")
-                    }
-                    paramClass.isString() || paramClass.isInt() || paramClass.isBoolean() -> {
-                        code.append("val ${paramName}Mock = params[$paramIndex] as ${paramClass.name}\n")
-                    }
-                    paramClass.isCollection() -> {
-                        code.append("val ${paramName}Mock = params[$paramIndex] as ${paramClass.name}\n")
-                    }
-                    else -> {
-                        throw IllegalArgumentException("Unsupported type: ${paramClass.name}")
-                    }
-                }
-            }
-            codeList.add(code.toString())
-        }
-
-        return codeList
-    }
-
     /*fun generateMockCode(parameters: List<Parameter>, mockData: List<List<Any>>): List<String> {
         val codeList = mutableListOf<String>()
 
         mockData.forEachIndexed { index, params ->
             val code = StringBuilder()
-            params.forEachIndexed { paramIndex, paramValue ->
-                val parameter = parameters[paramIndex]
+            var paramIndex = 0
+            val mocks = mockData[index]
+
+            parameters.forEach { parameter ->
                 val paramName = parameter.name
                 val paramClass = parameter.klazz
 
-                when {
-                    paramClass.isData -> {
-                        val mockName = "${paramName}Mock$index"
-                        code.append("val $mockName = mock<${paramClass.simpleName}> {\n")
-                        paramClass.primaryConstructor?.parameters?.forEach { constructorParam ->
-                            val property = paramClass.declaredMemberProperties.first { it.name == constructorParam.name }
-                            val propertyName = property.name
-                            code.append("    whenever(it.$propertyName).thenReturn(params[$paramIndex] as ${property.returnType.jvmErasure.simpleName})\n")
+                if (paramClass.isData()) {
+                    val mockName = "${paramName}Mock$index"
+                    code.append("val $mockName = mock<${paramClass.name}> {\n")
+                    paramClass.primaryConstructorParameters.forEach { constructorParam ->
+                        val propertyName = constructorParam.name
+                        val startValue = try {
+                            mocks[paramIndex]
+                        } catch (e: Exception) {
+                            null
                         }
-                        code.append("}\n")
+                        val value = if (startValue is String && startValue.isEmpty()) {
+                            "\"\""
+                        } else startValue
+
+                        code.append("    whenever(it.$propertyName).thenReturn($value)\n")
+                        paramIndex++
                     }
-                    paramClass == String::class || paramClass == Int::class || paramClass == Boolean::class -> {
-                        code.append("val ${paramName}Mock = params[$paramIndex] as ${paramClass.simpleName}\n")
-                    }
-                    paramClass.isSubclassOf(Collection::class) -> {
-                        code.append("val ${paramName}Mock = params[$paramIndex] as ${paramClass.simpleName}\n")
-                    }
-                    else -> {
-                        throw IllegalArgumentException("Unsupported type: ${paramClass.simpleName}")
-                    }
+                    code.append("}\n")
+                } else {
+                    code.append("val ${paramName}Mock = ${mocks[paramIndex]}")
+                    paramIndex++
                 }
             }
             codeList.add(code.toString())
