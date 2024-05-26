@@ -33,20 +33,8 @@ sealed class InteractionType {
             Input.NoInput -> "no input"
             is Input.NumberInput -> "number input"
             is Input.RandomStringInput -> "random string input"
-            is Input.ValidEmailInput -> "valid email input (${this.value})"
+            is Input.ValidEmailInput -> "valid email input"
             Visibility -> "visibility check"
         }
     }
-}
-
-sealed class Interaction {
-    data class Single(
-        val testTag: String,
-        val interaction: InteractionType
-    ) : Interaction()
-
-    data class Multiple(
-        val testTag: String,
-        val interactions: List<InteractionType>
-    ) : Interaction()
 }

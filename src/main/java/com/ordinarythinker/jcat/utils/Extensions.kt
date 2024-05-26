@@ -43,3 +43,24 @@ fun KtClass.isCollection(): Boolean {
 fun KtClass.getProperties(): List<KtProperty> {
     return this.declarations.filterIsInstance<KtProperty>()
 }
+
+fun <T> getAllCombinations(lists: List<List<T>>): List<List<T>> {
+    if (lists.isEmpty()) {
+        return listOf(emptyList())
+    }
+
+    val head = lists.first()
+    val tail = lists.drop(1)
+    val combinations = getAllCombinations(tail)
+
+    val result = mutableListOf<List<T>>()
+    for (element in head) {
+        for (combination in combinations) {
+            val newCombination = mutableListOf(element)
+            newCombination.addAll(combination)
+            result.add(newCombination)
+        }
+    }
+
+    return result
+}

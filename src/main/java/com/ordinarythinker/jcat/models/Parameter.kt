@@ -1,8 +1,8 @@
 package com.ordinarythinker.jcat.models
 
-import org.jetbrains.kotlin.psi.KtClass
+import com.ordinarythinker.jcat.enums.ParameterType
 
 data class Parameter(
     val name: String,
-    val klazz: KtClass
+    val type: ParameterType
 )

@@ -1,13 +1,12 @@
 package com.ordinarythinker.jcat.generator
 
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTreeUtil
-import com.ordinarythinker.jcat.enums.Interaction
 import com.ordinarythinker.jcat.enums.InteractionType
 import com.ordinarythinker.jcat.enums.KeyboardType
+import com.ordinarythinker.jcat.enums.ParameterType
 import com.ordinarythinker.jcat.enums.VisualTransformationType
 import com.ordinarythinker.jcat.models.FunctionTest
 import com.ordinarythinker.jcat.models.Parameter
@@ -17,15 +16,20 @@ import com.ordinarythinker.jcat.utils.*
 import com.ordinarythinker.jcat.utils.Cons.clickables
 import com.ordinarythinker.jcat.utils.Cons.textFields
 import com.ordinarythinker.jcat.utils.Cons.visibles
+import org.jetbrains.kotlin.descriptors.CallableDescriptor
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
+import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
 import org.jetbrains.kotlin.idea.stubindex.KotlinFullClassNameIndex
-import org.jetbrains.kotlin.nj2k.postProcessing.resolve
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.resolve.BindingContext
+import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
+import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
+import org.jetbrains.kotlin.resolve.source.getPsi
 import org.jetbrains.kotlin.types.KotlinType
+import org.jetbrains.kotlin.utils.IDEAPluginsCompatibilityAPI
 
 class CodeAnalyzer(
     private val project: Project,
@@ -43,7 +47,12 @@ class CodeAnalyzer(
         functions.forEach { function ->
             val parameters = extractParameters(function)
             val mocks = mocker.generateMockData(parameters)
-            val imports = mocker.imports
+            val imports = mutableListOf<String>()
+            imports.addAll(mocker.imports)
+            val fqName = function.fqName?.asString()
+            fqName?.let { imports.add(it) }
+
+
             val subFunctions = findComposableFunctionsInBody(function)
 
             val interactionsForScreen = mutableListOf<List<TestNode>>()
@@ -55,7 +64,6 @@ class CodeAnalyzer(
             tests.add(
                 FunctionTest(
                     function = function,
-                    parameters = parameters.map { it.name },
                     mocks = mocks,
                     imports = imports,
                     scenarios = interactionsForScreen
@@ -82,137 +90,181 @@ class CodeAnalyzer(
 
     private fun findComposableFunctionsInBody(function: KtNamedFunction): List<KtCallExpression> {
         val callExpressions = PsiTreeUtil.findChildrenOfType(function.bodyBlockExpression, KtCallExpression::class.java)
-        return callExpressions.filter { isComposableFunction(it) }
+        return callExpressions.filter { func ->
+            val calleeExpression = func.calleeExpression
+            if (calleeExpression is KtNameReferenceExpression) {
+                val functionName = calleeExpression.getReferencedName()
+                println(functionName)
+            }
+
+            isComposableFunction(func)
+        }
     }
 
+    @OptIn(IDEAPluginsCompatibilityAPI::class)
     private fun isComposableFunction(callExpression: KtCallExpression): Boolean {
-        val resolvedFunction = try {
-            callExpression.resolve() as? KtNamedFunction?
+        return try {
+            val bindingContext = callExpression.analyze(BodyResolveMode.FULL)
+            val referenceExpression = callExpression.calleeExpression as? KtReferenceExpression
+            val resolvedCall: ResolvedCall<out CallableDescriptor>? = referenceExpression.getResolvedCall(bindingContext)
+            val resultingDescriptor = resolvedCall?.resultingDescriptor
+            if (resultingDescriptor is FunctionDescriptor) {
+                val annotations = resultingDescriptor.annotations
+                annotations.any {
+                    it.fqName?.asString()?.contains("Composable")
+                        ?: false
+                }
+            } else false
         } catch (e: Exception) {
-            null
+            false
         }
-        val annotations = resolvedFunction?.annotationEntries
-        val isComposable = annotations?.any { it.isComposableAnnotation() }
-        return isComposable ?: false
+    }
+
+    @OptIn(IDEAPluginsCompatibilityAPI::class)
+    fun findFunctionDeclaration(callExpression: KtCallExpression): KtNamedFunction? {
+        val bindingContext = callExpression.analyze(BodyResolveMode.FULL)
+        val referenceExpression = callExpression.calleeExpression as? KtReferenceExpression ?: return null
+        val resolvedCall: ResolvedCall<out CallableDescriptor>? = referenceExpression.getResolvedCall(bindingContext)
+        val resultingDescriptor = resolvedCall?.resultingDescriptor ?: return null
+        if (resultingDescriptor is FunctionDescriptor) {
+            val declaration = resultingDescriptor.source.getPsi()
+            if (declaration is KtNamedFunction) {
+                return declaration
+            }
+        }
+        return null
     }
 
     private fun defineScenarios(ktCallExpression: KtCallExpression): List<List<TestNode>> {
         val interactions = defineInteractionType(ktCallExpression)
-        return generateAllCombinations(interactions)
+        return getAllCombinations(interactions)
     }
 
-    private fun defineInteractionType(ktCallExpression: KtCallExpression): List<Interaction> {
-        val name = ktCallExpression.name
+    private fun defineInteractionType(ktCallExpression: KtCallExpression): List<List<TestNode>> {
+        val calleeExpression = ktCallExpression.calleeExpression
+        val name = if (calleeExpression is KtNameReferenceExpression) {
+            val functionName = calleeExpression.getReferencedName()
+            println(functionName)
+            functionName
+        } else null
+
         val testTag = retrieveTestTagFromComposable(ktCallExpression)
-        val nodes = mutableListOf<Interaction>()
+        val nodes = mutableListOf<List<TestNode>>()
 
-        if (name != null && testTag != null) {
-            if (!settings.excludeTags.contains(testTag)) {
-                when (name) {
-                    in textFields -> {
-                        val keyboardType = getKeyboardType(ktCallExpression)
-                        val testNoInput = settings.forNode.firstOrNull { it.nodeTag == testTag }?.rules?.useEmptyStrings
-                            ?: settings.globalRules.useEmptyStrings
+        val tryRecursively = {
+            val funDeclaration = findFunctionDeclaration(ktCallExpression)
+            funDeclaration?.let { declaration ->
+                val calls = findComposableFunctionsInBody(declaration)
+                val interactions = mutableListOf<List<TestNode>>()
+                calls.forEach { call ->
+                    val interaction = defineInteractionType(call)
+                    interactions.addAll(interaction)
+                }
+            }
+        }
 
-                        val inputs = mutableListOf<InteractionType.Input>()
-                        if (testNoInput) {
-                            inputs.add(InteractionType.Input.NoInput)
+        if (name != null) {
+            if (testTag != null) {
+                if (!settings.excludeTags.contains(testTag)) {
+                    when (name) {
+                        in textFields -> {
+                            val keyboardType = getKeyboardType(ktCallExpression)
+                            val testNoInput = settings.forNode.firstOrNull { it.nodeTag == testTag }?.rules?.useEmptyStrings
+                                ?: settings.globalRules.useEmptyStrings
+
+                            val inputs = mutableListOf<TestNode>()
+                            if (testNoInput) {
+                                inputs.add(
+                                    TestNode(
+                                        testTag = testTag,
+                                        rule = InteractionType.Input.NoInput
+                                    )
+                                )
+                            }
+
+                            when (keyboardType) {
+                                KeyboardType.Number, KeyboardType.Phone, KeyboardType.Decimal, KeyboardType.NumberPassword -> {
+                                    inputs.add(
+                                        TestNode(
+                                            testTag = testTag,
+                                            rule = InteractionType.Input.NumberInput()
+                                        )
+                                    )
+                                }
+                                KeyboardType.Text, KeyboardType.Password -> {
+                                    inputs.add(
+                                        TestNode(
+                                            testTag = testTag,
+                                            rule = InteractionType.Input.RandomStringInput()
+                                        )
+                                    )
+                                }
+                                KeyboardType.Email -> {
+                                    inputs.add(
+                                        TestNode(
+                                            testTag = testTag,
+                                            rule = InteractionType.Input.RandomStringInput()
+                                        )
+                                    )
+
+                                    inputs.add(
+                                        TestNode(
+                                            testTag = testTag,
+                                            rule = InteractionType.Input.ValidEmailInput()
+                                        )
+                                    )
+                                }
+                            }
+
+                            nodes.add(inputs)
                         }
 
-                        when (keyboardType) {
-                            KeyboardType.Number, KeyboardType.Phone, KeyboardType.Decimal, KeyboardType.NumberPassword -> {
-                                inputs.add(InteractionType.Input.NumberInput())
+                        in clickables -> {
+                            val testNoClicks = settings.forNode.firstOrNull { it.nodeTag == testTag }?.rules?.applyClickIgnore
+                                ?: settings.globalRules.applyClickIgnore
+
+                            val clicks = mutableListOf<TestNode>()
+                            if (testNoClicks) {
+                                clicks.add(
+                                    TestNode(
+                                        testTag = testTag,
+                                        rule = InteractionType.Clickable.NoClick
+                                    )
+                                )
                             }
-                            KeyboardType.Text, KeyboardType.Password -> {
-                                inputs.add(InteractionType.Input.RandomStringInput())
-                            }
-                            KeyboardType.Email -> {
-                                inputs.add(InteractionType.Input.RandomStringInput())
-                                inputs.add(InteractionType.Input.ValidEmailInput())
-                            }
+
+                            clicks.add(
+                                TestNode(
+                                    testTag = testTag,
+                                    rule = InteractionType.Clickable.PerformClick
+                                )
+                            )
+
+                            nodes.add(clicks)
                         }
 
-                        nodes.add(
-                            Interaction.Multiple(testTag, inputs)
-                        )
-                    }
-
-                    in clickables -> {
-                        val testNoClicks = settings.forNode.firstOrNull { it.nodeTag == testTag }?.rules?.applyClickIgnore
-                            ?: settings.globalRules.applyClickIgnore
-
-                        val clicks = mutableListOf<InteractionType.Clickable>()
-                        if (testNoClicks) {
-                            clicks.add(InteractionType.Clickable.NoClick)
-                        }
-                        clicks.add(InteractionType.Clickable.PerformClick)
-
-                        nodes.add(
-                            Interaction.Multiple(testTag, clicks)
-                        )
-                    }
-
-                    in visibles -> {
-                        nodes.add(
-                            Interaction.Single(testTag, InteractionType.Visibility)
-                        )
-                    }
-
-                    else -> {
-                        val resolvedFunction = try {
-                            ktCallExpression.reference?.resolve() as? KtNamedFunction
-                        } catch (e: Exception) {
-                            null
+                        in visibles -> {
+                            nodes.add(
+                                listOf(
+                                    TestNode(
+                                        testTag = testTag,
+                                        rule = InteractionType.Visibility
+                                    )
+                                )
+                            )
                         }
 
-                        resolvedFunction?.let { declaration ->
-                            val nestedFunctions = findComposableFunctionsInBody(declaration)
-                            nestedFunctions.forEach { nestedFunction ->
-                                val nestedInteractions = defineInteractionType(nestedFunction)
-                                nodes.addAll(nestedInteractions)
-                            }
+                        else -> {
+                            tryRecursively.invoke()
                         }
                     }
                 }
+            } else {
+                tryRecursively.invoke()
             }
         }
 
         return nodes
-    }
-
-    private fun generateAllCombinations(nodes: List<Interaction>): List<List<TestNode>> {
-        if (nodes.isEmpty()) return emptyList()
-
-        val combinations = mutableListOf<List<TestNode>>()
-        generateCombinationsRecursive(nodes, 0, mutableListOf(), combinations)
-        return combinations
-    }
-
-    private fun generateCombinationsRecursive(
-        nodes: List<Interaction>,
-        index: Int,
-        currentCombination: MutableList<TestNode>,
-        combinations: MutableList<List<TestNode>>
-    ) {
-        if (index == nodes.size) {
-            combinations.add(currentCombination.toList())
-            return
-        }
-
-        when (val interaction = nodes[index]) {
-            is Interaction.Single -> {
-                currentCombination.add(TestNode(interaction.testTag, interaction.interaction))
-                generateCombinationsRecursive(nodes, index + 1, currentCombination, combinations)
-                currentCombination.removeAt(currentCombination.size - 1)
-            }
-            is Interaction.Multiple -> {
-                interaction.interactions.forEach { interactionType ->
-                    currentCombination.add(TestNode(interaction.testTag, interactionType))
-                    generateCombinationsRecursive(nodes, index + 1, currentCombination, combinations)
-                    currentCombination.removeAt(currentCombination.size - 1)
-                }
-            }
-        }
     }
 
     private fun retrieveTestTagFromComposable(callExpression: KtCallExpression): String? {
@@ -267,68 +319,38 @@ class CodeAnalyzer(
         return null
     }
 
-    private fun findFunctionDeclaration(functionName: String): KtNamedFunction? {
-        val psiManager = PsiManager.getInstance(project)
-        val projectFileIndex = ProjectFileIndex.SERVICE.getInstance(project)
-        val scope = GlobalSearchScope.allScope(project)
+    private fun getKeyboardType(callExpression: KtCallExpression): KeyboardType {
+        val valueArguments = callExpression.valueArguments
+        for (arg in valueArguments) {
+            val argExpression = arg.getArgumentExpression()
+            if (argExpression != null && argExpression is KtDotQualifiedExpression) {
+                val receiverExpression = argExpression.receiverExpression
+                val selectorExpression = argExpression.selectorExpression
 
-        val ktFiles = mutableListOf<KtNamedFunction>()
+                if (receiverExpression is KtDotQualifiedExpression && selectorExpression is KtCallExpression) {
+                    val keyboardTypeArg = selectorExpression.valueArguments.firstOrNull {
+                        val expr = it.getArgumentExpression()
 
-        projectFileIndex.iterateContent { virtualFile ->
-            if (!virtualFile.isDirectory && scope.contains(virtualFile)) {
-                val psiFile = psiManager.findFile(virtualFile)
-                if (psiFile != null && psiFile is KtNamedFunction && (psiFile as KtNamedFunction).name == functionName) {
-                    ktFiles.add(psiFile)
-                }
-            }
-            true
-        }
-
-        if (ktFiles.isNotEmpty()) {
-            return ktFiles.firstOrNull() // Return the first function found
-        }
-
-        return null
-    }
-
-    private fun getKeyboardType(element: PsiElement): KeyboardType {
-        when (element) {
-            is KtNamedFunction -> {
-                // Check function declaration parameters
-                val keyboardOptionsParameter = element.valueParameters.find {
-                    it.name == "keyboardOptions"
-                }
-                if (keyboardOptionsParameter != null) {
-                    // Find the default value of keyboardOptions parameter
-                    val defaultValue = keyboardOptionsParameter.defaultValue?.text ?: ""
-                    val matchResult = Regex("keyboardType\\s*=\\s*KeyboardType\\.(\\w+)").find(defaultValue)
-                    matchResult?.let {
-                        val keyboardType = it.groupValues[1]
-                        return KeyboardType.valueOf(keyboardType)
+                        expr is KtDotQualifiedExpression && expr.receiverExpression.text == "KeyboardType"
                     }
-                }
-            }
-            is KtCallExpression -> {
-                // Check function call arguments
-                val functionReference = element.reference
-                val resolvedFunction = functionReference?.resolve() as? KtNamedFunction
-                    ?: return KeyboardType.Text // Couldn't resolve function reference
 
-                val keyboardOptionsParameter = resolvedFunction.valueParameters.find {
-                    it.name == "keyboardOptions"
-                }
-                if (keyboardOptionsParameter != null) {
-                    // Find the default value of keyboardOptions parameter
-                    val defaultValue = keyboardOptionsParameter.defaultValue?.text ?: ""
-                    val matchResult = Regex("keyboardType\\s*=\\s*KeyboardType\\.(\\w+)").find(defaultValue)
-                    matchResult?.let {
-                        val keyboardType = it.groupValues[1]
-                        return KeyboardType.valueOf(keyboardType)
+                    keyboardTypeArg?.let { typeArg ->
+                        val valueExpression = typeArg.getArgumentExpression()
+
+                        if (valueExpression != null && valueExpression is KtDotQualifiedExpression) {
+                            val selector = valueExpression.selectorExpression?.text
+                            return try {
+                                selector?.let { s ->
+                                    KeyboardType.valueOf(s)
+                                } ?: KeyboardType.Text
+                            } catch (e: Exception) {
+                                KeyboardType.Text
+                            }
+                        }
                     }
                 }
             }
         }
-        // If keyboardOptions parameter is not present or no keyboardType specified, return default Text
         return KeyboardType.Text
     }
 
@@ -343,64 +365,30 @@ class CodeAnalyzer(
             val paramClass = findClassByName(kotlinType)
 
             if (paramClass != null) {
-                parameters.add(Parameter(name = paramName, klazz = paramClass))
+                parameters.add(Parameter(name = paramName, type = paramClass))
             }
         }
 
         return parameters
     }
 
-    private fun findClassByName(kotlinType: KotlinType): KtClass? {
+    private fun findClassByName(kotlinType: KotlinType): ParameterType? {
         val classDescriptor = kotlinType.constructor.declarationDescriptor as? ClassDescriptor
         val fqName = classDescriptor?.fqNameSafe
 
         return if (fqName != null) {
+
+            if (fqName.asString().startsWith("kotlin.Function")) {
+                return ParameterType.Function
+            }
+
             val project = file.project
             val psiClass = KotlinFullClassNameIndex.getInstance()
                 .get(fqName.asString(), project, GlobalSearchScope.allScope(project))
                 .firstOrNull() as? KtClassOrObject
-            psiClass as? KtClass
+            if (psiClass != null) {
+                ParameterType.Type(psiClass as KtClass)
+            } else null
         } else null
     }
-
-    /*fun generateMockCode(parameters: List<Parameter>, mockData: List<List<Any>>): List<String> {
-        val codeList = mutableListOf<String>()
-
-        mockData.forEachIndexed { index, params ->
-            val code = StringBuilder()
-            var paramIndex = 0
-            val mocks = mockData[index]
-
-            parameters.forEach { parameter ->
-                val paramName = parameter.name
-                val paramClass = parameter.klazz
-
-                if (paramClass.isData()) {
-                    val mockName = "${paramName}Mock$index"
-                    code.append("val $mockName = mock<${paramClass.name}> {\n")
-                    paramClass.primaryConstructorParameters.forEach { constructorParam ->
-                        val propertyName = constructorParam.name
-                        val startValue = try {
-                            mocks[paramIndex]
-                        } catch (e: Exception) {
-                            null
-                        }
-                        val value = if (startValue is String && startValue.isEmpty()) {
-                            "\"\""
-                        } else startValue
-
-                        code.append("    whenever(it.$propertyName).thenReturn($value)\n")
-                        paramIndex++
-                    }
-                    code.append("}\n")
-                } else {
-                    code.append("val ${paramName}Mock = ${mocks[paramIndex]}")
-                    paramIndex++
-                }
-            }
-            codeList.add(code.toString())
-        }
-
-        return codeList
-    }*/
 }

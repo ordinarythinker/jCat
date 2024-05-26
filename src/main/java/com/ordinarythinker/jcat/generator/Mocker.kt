@@ -2,9 +2,11 @@ package com.ordinarythinker.jcat.generator
 
 import com.intellij.openapi.project.Project
 import com.intellij.psi.search.GlobalSearchScope
+import com.ordinarythinker.jcat.enums.ParameterType
 import com.ordinarythinker.jcat.models.Parameter
 import com.ordinarythinker.jcat.settings.Settings
 import com.ordinarythinker.jcat.utils.generateRandomString
+import com.ordinarythinker.jcat.utils.getAllCombinations
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
 import org.jetbrains.kotlin.idea.stubindex.KotlinFullClassNameIndex
@@ -28,10 +30,10 @@ class Mocker(
 
         return linearized.mapNotNull { list ->
             try {
-                parameters.mapIndexed { index, property ->
-                    "${property.name} = ${list[index]}"
+                List(parameters.size) { index ->
+                    "${list[index]}"
                 }
-                    .joinToString(", ")
+                    .joinToString(",\n")
             } catch (e: Exception) {
                 null
             }
@@ -40,64 +42,70 @@ class Mocker(
 
     private fun getPossibleValues(parameter: Parameter): List<Any> {
         val numberValues = getNumberValues()
-        return when {
-            parameter.klazz.name == "String" -> {
-                getStringValues().map { "${parameter.name} = $it" }
-            }
-            parameter.klazz.name == "Int" -> {
-                numberValues.map { "${parameter.name} = $it" }
-            }
-            parameter.klazz.name == "Double" -> {
-                numberValues.map { it.toDouble() }.map { "${parameter.name} = $it" }
-            }
-            parameter.klazz.name == "Float" -> {
-                numberValues.map { it.toFloat() }.map { "${parameter.name} = $it" }
-            }
-            parameter.klazz.name == "Long" -> {
-                numberValues.map { it.toLong() }.map { "${parameter.name} = $it" }
-            }
-            parameter.klazz.name == "Short" -> {
-                numberValues.map { it.toShort() }.map { "${parameter.name} = $it" }
-            }
-            parameter.klazz.name == "Boolean" -> {
-                booleanValues.map { "${parameter.name} = $it" }
-            }
+        return when (parameter.type) {
+            ParameterType.Function -> listOf("${parameter.name} = {}")
+            is ParameterType.Type -> {
+                val klazz = parameter.type.clazz
+                when {
+                    klazz.name == "String" -> {
+                        getStringValues().map { "${parameter.name} = $it" }
+                    }
+                    klazz.name == "Int" -> {
+                        numberValues.map { "${parameter.name} = $it" }
+                    }
+                    klazz.name == "Double" -> {
+                        numberValues.map { it.toDouble() }.map { "${parameter.name} = $it" }
+                    }
+                    klazz.name == "Float" -> {
+                        numberValues.map { it.toFloat() }.map { "${parameter.name} = $it" }
+                    }
+                    klazz.name == "Long" -> {
+                        numberValues.map { it.toLong() }.map { "${parameter.name} = $it" }
+                    }
+                    klazz.name == "Short" -> {
+                        numberValues.map { it.toShort() }.map { "${parameter.name} = $it" }
+                    }
+                    klazz.name == "Boolean" -> {
+                        booleanValues.map { "${parameter.name} = $it" }
+                    }
 
-            parameter.klazz.isEnum() -> {
-                parameter.klazz.declarations.filterIsInstance<KtEnumEntry>().map { entry ->
-                    "${parameter.klazz.name}.${entry.name}"
-                }.map { "${parameter.name} = $it" }
-            }
+                    klazz.isEnum() -> {
+                        klazz.declarations.filterIsInstance<KtEnumEntry>().map { entry ->
+                            "${klazz.name}.${entry.name}"
+                        }.map { "${parameter.name} = $it" }
+                    }
 
-            parameter.klazz.isData() -> {
-                parameter.klazz.fqName?.asString()?.let { imports.add(it) }
+                    klazz.isData() -> {
+                        klazz.fqName?.asString()?.let { imports.add(it) }
 
-                val properties = parameter.klazz.primaryConstructorParameters.mapNotNull { parameter ->
-                    val propertyName = parameter.name
-                    val propertyType = parameter.typeReference
-                    val bindingContext = propertyType?.analyze(BodyResolveMode.PARTIAL)
-                    val kotlinType = bindingContext?.get(BindingContext.TYPE, propertyType)
-                    val paramClass = kotlinType?.let { findClassByName(it) }
+                        val properties = klazz.primaryConstructorParameters.mapNotNull { param ->
+                            val propertyName = param.name
+                            val propertyType = param.typeReference
+                            val bindingContext = propertyType?.analyze(BodyResolveMode.PARTIAL)
+                            val kotlinType = bindingContext?.get(BindingContext.TYPE, propertyType)
+                            val paramClass = kotlinType?.let { findClassByName(it) }
 
-                    if (propertyName != null && paramClass != null) {
-                        Parameter(name = propertyName, klazz = paramClass)
-                    } else {
-                        null
+                            if (propertyName != null && paramClass != null) {
+                                Parameter(name = propertyName, type = paramClass)
+                            } else {
+                                null
+                            }
+                        }
+
+                        val propertyValues = properties.map { property ->
+                            getPossibleValues(property)
+                        }
+
+                        val linearized = getAllCombinations(propertyValues)
+
+                        return linearized.map {
+                            "${parameter.name} = ${klazz.name}(\n${it.joinToString(",\n")}\n)"
+                        }
+                    }
+                    else -> {
+                        emptyList()
                     }
                 }
-
-                val propertyValues = properties.map { property ->
-                    getPossibleValues(property)
-                }
-
-                val linearized = getAllCombinations(propertyValues)
-
-                return linearized.map {
-                    "${parameter.klazz.name}(${it.joinToString(", ")})"
-                }
-            }
-            else -> {
-                emptyList()
             }
         }
     }
@@ -122,36 +130,21 @@ class Mocker(
         return numberValues
     }
 
-    private fun findClassByName(kotlinType: KotlinType): KtClass? {
+    private fun findClassByName(kotlinType: KotlinType): ParameterType? {
         val classDescriptor = kotlinType.constructor.declarationDescriptor as? ClassDescriptor
         val fqName = classDescriptor?.fqNameSafe
 
         return if (fqName != null) {
+            if (fqName.asString().startsWith("kotlin.Function")) {
+                return ParameterType.Function
+            }
+
             val psiClass = KotlinFullClassNameIndex.getInstance()
                 .get(fqName.asString(), project, GlobalSearchScope.allScope(project))
                 .firstOrNull() as? KtClassOrObject
-            psiClass as? KtClass
+            if (psiClass != null) {
+                ParameterType.Type(psiClass as KtClass)
+            } else null
         } else null
-    }
-
-    fun <T> getAllCombinations(lists: List<List<T>>): List<List<T>> {
-        if (lists.isEmpty()) {
-            return listOf(emptyList())
-        }
-
-        val head = lists.first()
-        val tail = lists.drop(1)
-        val combinations = getAllCombinations(tail)
-
-        val result = mutableListOf<List<T>>()
-        for (element in head) {
-            for (combination in combinations) {
-                val newCombination = mutableListOf(element)
-                newCombination.addAll(combination)
-                result.add(newCombination)
-            }
-        }
-
-        return result
     }
 }
